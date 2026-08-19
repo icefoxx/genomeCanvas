@@ -1,0 +1,7 @@
+##mini deterministic fixture
+chr1	synthetic	transcript	20	260	.	+	.	gene_id "g1"; transcript_id "t1";
+chr1	synthetic	exon	20	80	.	+	.	gene_id "g1"; transcript_id "t1";
+chr1	synthetic	exon	150	260	.	+	.	gene_id "g1"; transcript_id "t1";
+chr1	synthetic	transcript	40	240	.	-	.	gene_id "g2"; transcript_id "t2";
+chr1	synthetic	exon	40	100	.	-	.	gene_id "g2"; transcript_id "t2";
+chr1	synthetic	exon	180	240	.	-	.	gene_id "g2"; transcript_id "t2";

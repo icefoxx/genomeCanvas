@@ -1,0 +1,18 @@
+.slim/deepwork/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.DS_Store
+
+# Generated figure artifacts.
+examples/**/output/
+examples/demo_outputs/*.png
+examples/demo_outputs/*.pdf
+examples/advanced_features/*.png
+examples/advanced_features/*.pdf

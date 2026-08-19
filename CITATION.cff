@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: GenomeCanvas
+message: Please cite GenomeCanvas when using it in published work.
+type: software
+authors:
+  - family-names: contributors
+    given-names: GenomeCanvas
+version: 0.1.0
+date-released: 2026-08-11
+license: MIT

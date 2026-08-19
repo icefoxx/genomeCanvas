@@ -1,0 +1,15 @@
+version: "1.0"
+genome:
+  assembly: synthetic
+region:
+  chrom: chr1
+  start: 0
+  end: 300
+tracks:
+  - id: signal_a
+    type: signal
+    label: Signal A
+    source:
+      path: ../../tests/fixtures/mini_genome/signal_a.bedgraph
+export:
+  formats: [pdf, svg]

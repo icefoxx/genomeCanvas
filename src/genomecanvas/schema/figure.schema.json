@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["genome","region","tracks"],"properties":{"version":{"type":"string"},"genome":{"type":"object","required":["assembly"]},"region":{"type":"object","required":["chrom","start","end"]},"tracks":{"type":"array"}}}

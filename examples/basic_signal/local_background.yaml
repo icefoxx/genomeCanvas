@@ -1,0 +1,23 @@
+version: "1.0"
+genome:
+  assembly: synthetic
+region:
+  chrom: chr1
+  start: 0
+  end: 300
+tracks:
+  - id: WT_ATAC
+    type: signal
+    label: Raw signal
+    source:
+      path: ../../tests/fixtures/mini_genome/signal_a.bedgraph
+transformations:
+  - id: local_enrichment
+    operation: log2_ratio
+    input: WT_ATAC
+    background:
+      strategy: flanking
+      upstream: 100
+      downstream: 100
+      estimator: median
+    pseudocount: 0.01
