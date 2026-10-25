@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in · GenomeCanvas Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6f68'/%3E%3Cpath d='M6 22c3-10 5-10 7-4s4 6 6-2 4-8 7 0' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<script defer src="login.js"></script>
+</head>
+<body class="auth-page">
+<main class="auth-card">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M6 22c3-10 5-10 7-4s4 6 6-2 4-8 7 0"/></svg>
+    <span>GenomeCanvas<em>Studio</em></span>
+  </div>
+  <h1 id="heading">Sign in</h1>
+  <p id="lead" class="hint">Use the e-mail address your sequencing core registered for you.</p>
+  <form id="form" novalidate>
+    <label class="dialog-field" id="emailrow"><span>E-mail</span><input id="email" type="email" autocomplete="username" required></label>
+    <label class="dialog-field"><span id="pwlabel">Password</span><input id="password" type="password" autocomplete="current-password" required></label>
+    <label class="dialog-field" id="confirmrow" hidden><span>Repeat password</span><input id="confirm" type="password" autocomplete="new-password"></label>
+    <p id="error" class="auth-error" role="alert" hidden></p>
+    <button class="btn primary wide" id="submit">Sign in</button>
+  </form>
+  <p class="hint small" id="foot">Forgotten your password? Ask the core facility for a new invitation link.</p>
+</main>
+</body>
+</html>

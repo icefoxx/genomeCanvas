@@ -1,0 +1,8 @@
+file	label	group	color	cmap	role
+# One row per file the client should see. Paths are relative to this folder.
+bigwig/WT_rep1.bw	WT rep1	WT	#1F6F68		
+bigwig/WT_rep2.bw	WT rep2	WT	#3E9A8F		
+bigwig/KO_rep1.bw	KO rep1	KO	#C0714F		
+bigwig/KO_rep2.bw	KO rep2	KO	#D99573		
+peaks/consensus_peaks.narrowPeak	Consensus peaks	peaks			
+annotation/mm10_TSS.bed	TSS (protein-coding)	TSS			regions

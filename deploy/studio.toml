@@ -1,0 +1,31 @@
+# GenomeCanvas Studio configuration for the docker-compose deployment.
+# Copy to studio.local.toml and edit. Every key can also be set as GC_STUDIO_<KEY> in the environment.
+[studio]
+host = "0.0.0.0"                 # inside the container; only nginx can reach it
+port = 8765
+public_url = "https://figures.core.example.edu"   # used for invitation links and Origin checks
+secure_cookies = true            # required behind HTTPS
+
+auth = "local"                   # "local": accounts + invitation links; "proxy": SSO via oauth2-proxy
+# auth = "proxy"
+# proxy_user_header = "X-Auth-Request-Email"
+# proxy_auto_create = true       # first SSO login creates an account with no project access
+trusted_proxies = ["127.0.0.1", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"]   # docker networks
+session_hours = 12
+
+data_root = "/data/deliverables" # project data_dir values are relative to this
+shared_root = "/data/annotations"
+workspace = "/srv/genomecanvas"
+demo_project = true              # public example projects visible to every user (training)
+
+workers = 4                      # parallel figures; each is a separate process
+job_timeout = 300                # seconds per figure
+worker_memory_mb = 3072          # address-space cap per worker (Linux)
+max_jobs_per_user = 3
+max_queue = 64
+
+max_upload_mb = 2048
+default_quota_gb = 20            # per-project upload quota
+job_retention_days = 14          # results kept unless saved as a figure
+upload_retention_days = 30
+cache_max_gb = 20

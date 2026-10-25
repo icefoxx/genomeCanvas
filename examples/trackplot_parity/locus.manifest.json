@@ -1,0 +1,78 @@
+{
+  "figure_spec_hash": "8c5462af3f59301bc646078043dbb4e1d6344b948a1e46b115dd56ca9ecc0ef3",
+  "inputs": [
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_Oct4.bw",
+      "sha256": "7169b5510b28880db57f2bda5d178573d1216bf0a98117bcb322b847ceea066a",
+      "size": 38707
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_Nanog.bw",
+      "sha256": "eb2588903260c91e31521d5b0d2442a5b158f8b865a69f2564cd218b7ea7186b",
+      "size": 33060
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_k4me3.bw",
+      "sha256": "fda2dc771e02a245859ea6be48e3d96aec077540d1db5cafd929ff511b83b297",
+      "size": 35921
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_k4me1.bw",
+      "sha256": "7fa0e553fe1a30e082cdcbc42b1db2aae81f37163a7c79c4bdc3279e37e06572",
+      "size": 36643
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_k27ac.bw",
+      "sha256": "178130f98f1bc8e5651cc610dcb3048dd62415a66c8192098d704db04446f54b",
+      "size": 36565
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_H2az.bw",
+      "sha256": "68939bc5eb21d43598693761f83cf53fdbea0f2c902a19842e03fa729ecb1128",
+      "size": 36031
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_Ctcf.bw",
+      "sha256": "23df27c70fc0352b24614cca94e6de578a4cfdb14327ea84f2920261de0ec580",
+      "size": 35326
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/narrowpeak/H1_Oct4.bed",
+      "sha256": "494a40d751835bb0bb4c3581083d0eb0098147de22329afacf95a3ca8e322900",
+      "size": 102
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/narrowpeak/H1_Nanog.bed",
+      "sha256": "71c241c1320a80efd6f68709dc53fee2ded446c8210a624dd575b9287d0204bf",
+      "size": 104
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/narrowpeak/H1_chromHMM.bed",
+      "sha256": "19456c4e6ad20b6d7f7db606537eac7018c727ea26ea33286222a101ba4b7b49",
+      "size": 528
+    },
+    {
+      "path": "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/cytoBandIdeo.txt.gz",
+      "sha256": "ba056331d70e840f6874bf7211a6483e2e4ed01f9e3e36c4b9def6966f50ffd2",
+      "size": 8860
+    }
+  ],
+  "region": {
+    "chrom": "chr6",
+    "end": 31144789,
+    "gene": null,
+    "padding": 0,
+    "start": 31125776
+  },
+  "rendering": {
+    "backend": "matplotlib"
+  },
+  "scale_decisions": [],
+  "software": {
+    "name": "GenomeCanvas",
+    "python": "3.11.5",
+    "version": "0.1.0"
+  },
+  "timestamp": null,
+  "transformations": []
+}

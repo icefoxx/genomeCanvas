@@ -1,0 +1,15 @@
+.git
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.egg-info
+build
+dist
+# Large local fixtures and examples are not needed in the image.
+tests/fixtures/reference_demo
+tests/fixtures/deeptools_encode
+examples
+deploy/certs
+deploy/*.local.toml

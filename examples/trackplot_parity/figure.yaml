@@ -1,0 +1,92 @@
+version: '1.0'
+genome:
+  assembly: hg19
+region:
+  chrom: chr6
+  start: 31125776
+  end: 31144789
+gene_model: ../../tests/fixtures/trackplot_demo/chr6_refGene.gtf
+collapse_transcripts: true
+bigwig_engine: auto
+highlights:
+  - start: 31139576
+    end: 31140109
+    color: '#ffc41a'
+    alpha: 0.28
+  - start: 31140574
+    end: 31141112
+    color: '#ffc41a'
+    alpha: 0.28
+scales:
+  mode: per_track
+layout:
+  width: 8.8
+  height: 11.2
+  track_gap: 0.06
+  show_y_axis: true
+  y_tick_count: 3
+  x_label: 'hg19 chr6:31,125,776-31,144,789'
+tracks:
+  - id: oct4
+    type: signal
+    label: OCT4
+    source: {path: ../../tests/fixtures/trackplot_demo/bw/H1_Oct4.bw}
+    style: {color: '#d35400', ymin: 0}
+  - id: nanog
+    type: signal
+    label: NANOG
+    source: {path: ../../tests/fixtures/trackplot_demo/bw/H1_Nanog.bw}
+    style: {color: '#d35400', ymin: 0}
+  - id: k4me3
+    type: signal
+    label: H3K4me3
+    source: {path: ../../tests/fixtures/trackplot_demo/bw/H1_k4me3.bw}
+    style: {color: '#2980b9', ymin: 0}
+  - id: k4me1
+    type: signal
+    label: H3K4me1
+    source: {path: ../../tests/fixtures/trackplot_demo/bw/H1_k4me1.bw}
+    style: {color: '#2980b9', ymin: 0}
+  - id: k27ac
+    type: signal
+    label: H3K27ac
+    source: {path: ../../tests/fixtures/trackplot_demo/bw/H1_k27ac.bw}
+    style: {color: '#2980b9', ymin: 0}
+  - id: h2az
+    type: signal
+    label: H2A.Z
+    source: {path: ../../tests/fixtures/trackplot_demo/bw/H1_H2az.bw}
+    style: {color: '#27ae60', ymin: 0}
+  - id: ctcf
+    type: signal
+    label: CTCF
+    source: {path: ../../tests/fixtures/trackplot_demo/bw/H1_Ctcf.bw}
+    style: {color: '#27ae60', ymin: 0}
+  - id: oct4_peaks
+    type: peak
+    label: OCT4
+    height: 0.4
+    source: {path: ../../tests/fixtures/trackplot_demo/narrowpeak/H1_Oct4.bed}
+    style: {color: '#d35400'}
+  - id: nanog_peaks
+    type: peak
+    label: NANOG
+    height: 0.4
+    source: {path: ../../tests/fixtures/trackplot_demo/narrowpeak/H1_Nanog.bed}
+    style: {color: '#c0392b'}
+  - id: hmm
+    type: chromhmm
+    label: chromHMM
+    height: 0.32
+    source: {path: ../../tests/fixtures/trackplot_demo/narrowpeak/H1_chromHMM.bed}
+  - id: genes
+    type: gene
+    label: genes
+    height: 1.3
+    style:
+      genes: [POU5F1, TCF19]
+  - id: cyto
+    type: cytoband
+    label: chr6
+    height: 0.4
+    source: {path: ../../tests/fixtures/trackplot_demo/cytoBandIdeo.txt.gz}

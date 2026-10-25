@@ -39,3 +39,17 @@ def chromosome_alias(chrom: str) -> str:
     """
     aliases = {"1": "chr1", "X": "chrX", "MT": "chrM", "M": "chrM"}
     return aliases.get(chrom, chrom)
+
+
+def chrom_candidates(chrom: str) -> list[str]:
+    """Return unique chromosome spellings to try against file headers."""
+    names = [chrom, chromosome_alias(chrom)]
+    if chrom.startswith("chr") and len(chrom) > 3:
+        names.append(chrom[3:])
+    elif not chrom.startswith("chr"):
+        names.append("chr" + chrom)
+    unique: list[str] = []
+    for name in names:
+        if name not in unique:
+            unique.append(name)
+    return unique

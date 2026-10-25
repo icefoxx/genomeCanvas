@@ -6,7 +6,12 @@ import warnings
 
 import numpy as np
 
+from ..core.coordinates import chrom_candidates
 from ..model.track import SignalSlice
+
+
+def _compatible_chrom(left: str, right: str) -> bool:
+    return bool(set(chrom_candidates(left)) & set(chrom_candidates(right)))
 
 
 def compare_signal(
@@ -17,7 +22,9 @@ def compare_signal(
     pseudocount: float | None = None,
 ) -> SignalSlice:
     """Compute difference, ratio, or log2 ratio with explicit safeguards."""
-    if (left.chrom, left.start, left.end) != (right.chrom, right.start, right.end):
+    if left.start != right.start or left.end != right.end or not _compatible_chrom(
+        left.chrom, right.chrom
+    ):
         raise ValueError("signal comparison requires matching chromosome and region")
     if left.units != right.units:
         raise ValueError("signal comparison requires matching declared units")

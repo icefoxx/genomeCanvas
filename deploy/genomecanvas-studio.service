@@ -1,0 +1,25 @@
+# systemd unit for running GenomeCanvas Studio without containers.
+#   python3 -m venv /opt/genomecanvas/venv && /opt/genomecanvas/venv/bin/pip install -e "/opt/genomecanvas/src[studio]"
+#   cp genomecanvas-studio.service /etc/systemd/system/ && systemctl enable --now genomecanvas-studio
+[Unit]
+Description=GenomeCanvas Studio
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=genomecanvas
+Group=genomecanvas
+Environment=MPLBACKEND=Agg
+ExecStart=/opt/genomecanvas/venv/bin/gcanvas-studio --config /etc/genomecanvas/studio.toml serve
+Restart=on-failure
+RestartSec=5
+MemoryMax=16G
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/genomecanvas
+ReadOnlyPaths=/data/core
+
+[Install]
+WantedBy=multi-user.target

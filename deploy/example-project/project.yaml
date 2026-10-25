@@ -1,0 +1,26 @@
+# Optional project settings, read on every scan.
+name: Smith lab · H3K27ac ChIP-seq
+genome: mm10
+description: Delivered 2026-10-20 · 2 conditions × 2 replicates
+defaults:                       # initial settings when a client first opens the project
+  chrom: chr6
+  start: 52150000
+  end: 52250000
+  flank: 3000
+  binsize: 50
+  alignment: TSS
+  palette: okabe
+  numerator: KO
+  denominator: WT
+templates:                      # one-click figures offered in Settings > Templates
+  - name: TSS heatmap ±3 kb (core standard)
+    description: Profile + heatmap, 50 bp bins, k-means 4
+    config:
+      category: 1
+      plot: 3
+      settings: {alignment: TSS, flank: 3000, binsize: 50, clusters: 4, cmap: auto}
+  - name: Genome-wide sample correlation (10 kb bins)
+    config:
+      category: 2
+      plot: 0
+      settings: {rel_mode: bins, rel_bin: 10000, corr_transform: log1p, method: spearman}

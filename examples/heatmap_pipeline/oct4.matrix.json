@@ -1,0 +1,60 @@
+{
+  "sample_labels": [
+    "OCT4",
+    "NANOG",
+    "H3K4me3",
+    "H3K27ac"
+  ],
+  "sample_paths": [
+    "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_Oct4.bw",
+    "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_Nanog.bw",
+    "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_k4me3.bw",
+    "/Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_k27ac.bw"
+  ],
+  "sample_boundaries": [
+    0,
+    60,
+    120,
+    180,
+    240
+  ],
+  "group_labels": [
+    "OCT4",
+    "NANOG"
+  ],
+  "group_boundaries": [
+    0,
+    2,
+    4
+  ],
+  "upstream": 1500,
+  "downstream": 1500,
+  "body": 0,
+  "bin_size": 50,
+  "ref_point": "center",
+  "bins_per_sample": 60,
+  "meta_groups": [
+    "TF",
+    "TF",
+    "histone",
+    "histone"
+  ],
+  "conditions": [
+    "TF",
+    "TF",
+    "histone",
+    "histone"
+  ],
+  "colormaps": [
+    "Oranges",
+    "Oranges",
+    "Blues",
+    "Blues"
+  ],
+  "profile_colors": [
+    "#d35400",
+    "#e67e22",
+    "#2980b9",
+    "#3498db"
+  ]
+}

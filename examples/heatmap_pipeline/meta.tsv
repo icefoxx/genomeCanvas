@@ -1,0 +1,5 @@
+bigWig	bigWigLabel	conditionGrp	metaGrp	colorMap	profileColor
+../../tests/fixtures/trackplot_demo/bw/H1_Oct4.bw	OCT4	TF	TF	Oranges	#d35400
+../../tests/fixtures/trackplot_demo/bw/H1_Nanog.bw	NANOG	TF	TF	Oranges	#e67e22
+../../tests/fixtures/trackplot_demo/bw/H1_k4me3.bw	H3K4me3	histone	histone	Blues	#2980b9
+../../tests/fixtures/trackplot_demo/bw/H1_k27ac.bw	H3K27ac	histone	histone	Blues	#3498db

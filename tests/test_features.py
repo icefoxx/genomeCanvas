@@ -24,6 +24,19 @@ from genomecanvas.validation.figure_linter import lint_figure
 FIXTURE = Path(__file__).parent / "fixtures/mini_genome"
 
 
+def test_read_bed_skips_track_browser_headers(tmp_path: Path) -> None:
+    path = tmp_path / "track.bed"
+    path.write_text(
+        "track type=bed name='HoxD'\n"
+        "browser position chr2:1-10\n"
+        "chr2\t10\t20\tpeak\t0\t+\n",
+        encoding="utf-8",
+    )
+    features = read_bed(path)
+    assert len(features) == 1
+    assert features[0].interval.chrom == "chr2"
+
+
 def test_fixture_readers() -> None:
     assert len(read_bed(FIXTURE / "peaks.bed")) == 2
     transcripts = read_gtf(FIXTURE / "mini.gtf", chrom="chr1")
@@ -37,6 +50,14 @@ def test_difference_requires_explicit_ratio_pseudocount() -> None:
     left = SignalSlice("chr1", 0, 200, starts, ends, np.array([1.0, 2.0]), "counts")
     right = SignalSlice("chr1", 0, 200, starts, ends, np.array([2.0, 4.0]), "counts")
     assert np.allclose(compare_signal(left, right).values, [1.0, 2.0])
+
+
+def test_compare_signal_accepts_chromosome_aliases() -> None:
+    starts = np.array([0, 100])
+    ends = np.array([100, 200])
+    left = SignalSlice("chrX", 0, 200, starts, ends, np.array([1.0, 2.0]))
+    right = SignalSlice("X", 0, 200, starts, ends, np.array([3.0, 5.0]))
+    assert np.allclose(compare_signal(left, right).values, [2.0, 3.0])
 
 
 def test_scale_modes_and_cytoband_coordinates() -> None:

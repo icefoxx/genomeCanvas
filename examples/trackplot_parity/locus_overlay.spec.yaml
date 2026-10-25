@@ -1,0 +1,251 @@
+version: '1.0'
+genome:
+  assembly: hg19
+region:
+  chrom: chr6
+  start: 31125776
+  end: 31144789
+  padding: 0
+gene_model: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/chr6_refGene.gtf
+query_ucsc: false
+collapse_transcripts: true
+tracks:
+- id: oct4
+  type: signal
+  label: OCT4
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_Oct4.bw
+  members: []
+  input_type: auto
+  height: 0.9
+  visibility: false
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#d35400'
+    ymin: 0
+- id: nanog
+  type: signal
+  label: NANOG
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_Nanog.bw
+  members: []
+  input_type: auto
+  height: 0.9
+  visibility: false
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#d35400'
+    ymin: 0
+- id: k4me3
+  type: signal
+  label: H3K4me3
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_k4me3.bw
+  members: []
+  input_type: auto
+  height: 0.9
+  visibility: false
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#2980b9'
+    ymin: 0
+- id: k4me1
+  type: signal
+  label: H3K4me1
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_k4me1.bw
+  members: []
+  input_type: auto
+  height: 0.9
+  visibility: false
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#2980b9'
+    ymin: 0
+- id: k27ac
+  type: signal
+  label: H3K27ac
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_k27ac.bw
+  members: []
+  input_type: auto
+  height: 0.9
+  visibility: false
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#2980b9'
+    ymin: 0
+- id: h2az
+  type: signal
+  label: H2A.Z
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_H2az.bw
+  members: []
+  input_type: auto
+  height: 0.9
+  visibility: false
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#27ae60'
+    ymin: 0
+- id: ctcf
+  type: signal
+  label: CTCF
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/bw/H1_Ctcf.bw
+  members: []
+  input_type: auto
+  height: 0.9
+  visibility: false
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#27ae60'
+    ymin: 0
+- id: overlay
+  type: overlay
+  label: H1 ESC
+  members:
+  - oct4
+  - nanog
+  - k4me3
+  - k4me1
+  - k27ac
+  - h2az
+  - ctcf
+  input_type: auto
+  height: 2.2
+  visibility: true
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style: {}
+- id: oct4_peaks
+  type: peak
+  label: OCT4 pk
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/narrowpeak/H1_Oct4.bed
+  members: []
+  input_type: auto
+  height: 0.5
+  visibility: true
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#d35400'
+- id: nanog_peaks
+  type: peak
+  label: NANOG pk
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/narrowpeak/H1_Nanog.bed
+  members: []
+  input_type: auto
+  height: 0.5
+  visibility: true
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    color: '#c0392b'
+- id: hmm
+  type: chromhmm
+  label: chromHMM
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/narrowpeak/H1_chromHMM.bed
+  members: []
+  input_type: auto
+  height: 0.32
+  visibility: true
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style: {}
+- id: genes
+  type: gene
+  label: genes
+  members: []
+  input_type: auto
+  height: 1.3
+  visibility: true
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style:
+    genes:
+    - POU5F1
+    - TCF19
+- id: cyto
+  type: cytoband
+  label: chr6
+  source:
+    path: /Users/qzhang10/workstation/development/genomeCanvas/tests/fixtures/trackplot_demo/cytoBandIdeo.txt.gz
+  members: []
+  input_type: auto
+  height: 0.4
+  visibility: true
+  metadata: {}
+  transformations: []
+  z_order: 0
+  style: {}
+groups: []
+scales:
+  mode: per_track
+highlights:
+- start: 31139576
+  end: 31140109
+  color: '#ffc41a'
+  alpha: 0.28
+- start: 31140574
+  end: 31141112
+  color: '#ffc41a'
+  alpha: 0.28
+layout:
+  width: 8.8
+  height: 7.4
+  track_gap: 0.06
+  units: inch
+  orientation: vertical
+  x_label: hg19 chr6:31,125,776-31,144,789
+  show_x_axis: true
+  show_gene_track: true
+  show_cytoband: false
+  cytoband_marker: bar
+  gene_track_scale: 1.0
+  cytoband_scale: 1.0
+  gene_cytoband_gap: 0.02
+  cytoband_marker_color: '#e33d32'
+  cytoband_marker_shape: bar
+  gene_model_label: none
+  transcript_label: id
+  x_tick_count: 5
+  y_axis_mode: outer
+  y_value_transform: identity
+  y_divisor: 1.0
+  y_tick_count: 3
+  y_tick_decimals: 1
+  y_tick_label_pad: 3.0
+  show_y_ticks: true
+  show_y_axis: true
+  y_tick_length: 3.0
+  show_major_frame: true
+theme: manuscript
+export:
+  formats:
+  - pdf
+  - svg
+metadata: {}
+transformations: []

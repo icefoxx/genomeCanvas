@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin · GenomeCanvas Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6f68'/%3E%3Cpath d='M6 22c3-10 5-10 7-4s4 6 6-2 4-8 7 0' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<script defer src="admin.js"></script>
+</head>
+<body class="admin-page">
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M6 22c3-10 5-10 7-4s4 6 6-2 4-8 7 0"/></svg>
+    <span>GenomeCanvas<em>Admin</em></span>
+  </div>
+  <nav class="categories" id="tabs">
+    <button data-tab="projects" aria-pressed="true">Projects</button>
+    <button data-tab="users" aria-pressed="false">Users</button>
+    <button data-tab="templates" aria-pressed="false">Templates</button>
+    <button data-tab="activity" aria-pressed="false">Activity</button>
+  </nav>
+  <div class="top-actions">
+    <button class="btn small ghost" id="cleanup" title="Apply retention rules now">Run cleanup</button>
+    <a class="btn small" href="/">Open studio</a>
+  </div>
+</header>
+<main class="admin-main">
+  <section id="tab-projects">
+    <div class="admin-head">
+      <div><h1>Projects</h1><p class="hint" id="roots"></p></div>
+      <div class="inline-btns"><button class="btn small ghost" id="rescanshared">Rescan shared annotations</button><button class="btn primary" id="newproject">New project</button></div>
+    </div>
+    <input type="search" class="input admin-filter" id="projectfilter" placeholder="Filter projects by ID, name or member…">
+    <div id="projects" class="admin-grid"></div>
+  </section>
+  <section id="tab-users" hidden>
+    <div class="admin-head"><h1>Users</h1><button class="btn primary" id="newuser">New user</button></div>
+    <input type="search" class="input admin-filter" id="userfilter" placeholder="Filter users…">
+    <table class="admin-table" id="users"></table>
+  </section>
+  <section id="tab-templates" hidden>
+    <div class="admin-head"><div><h1>Templates</h1><p class="hint">Create templates from the studio (Settings › Templates › Save current settings as template). Templates defined in a project's project.yaml are managed there.</p></div></div>
+    <table class="admin-table" id="templates"></table>
+  </section>
+  <section id="tab-activity" hidden>
+    <div class="admin-head"><h1>Activity</h1></div>
+    <input type="search" class="input admin-filter" id="auditfilter" placeholder="Filter by user, project or action…">
+    <table class="admin-table" id="audit"></table>
+  </section>
+</main>
+<dialog id="dialog" class="dialog">
+  <form method="dialog">
+    <h3 id="dialogtitle"></h3>
+    <div id="dialogbody"></div>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn ghost" formnovalidate>Close</button>
+      <button value="ok" class="btn primary" id="dialogok">Save</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

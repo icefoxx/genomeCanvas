@@ -80,6 +80,36 @@ tracks:
       path: tests/fixtures/mini_genome/signal_a.bedgraph
 ```
 
+## Figure Studio (web)
+
+A browser studio for every plot type, from a single user up to a multi-user service for a
+sequencing core (projects, accounts or SSO, admin console):
+
+```bash
+pip install -e ".[studio]"
+
+# Personal: your own folder of BigWig/BED/GTF files, no sign-in → http://127.0.0.1:8765
+python3 web/server.py --port 8765 --data-dir ~/data/bigwigs
+
+# Multi-user: password accounts, projects, admin console at /admin
+gcanvas-studio example-config > studio.toml        # set auth = "local", data_root, workspace
+gcanvas-studio --config studio.toml user add you@core.edu --admin   # prints an invitation link
+gcanvas-studio --config studio.toml project add P2026-017 --dir smith/P2026-017 --genome mm10
+gcanvas-studio --config studio.toml project member P2026-017 client@uni.edu --role editor
+gcanvas-studio --config studio.toml serve
+
+# Production: Docker + nginx (+ optional SSO)
+cd deploy && cp studio.toml studio.local.toml && docker compose up -d --build
+```
+
+Highlights: genome tracks, TSS/peak heatmaps and profiles, correlation/PCA over regions,
+**genome-wide bins or sliding windows**, an interactive PCA (hover, draggable labels),
+journal-size exports and an auto-generated Methods paragraph.
+
+* [docs/STUDIO_QUICKSTART.md](docs/STUDIO_QUICKSTART.md): copy-paste recipes for the server and CLI
+* [docs/STUDIO_DEPLOY.md](docs/STUDIO_DEPLOY.md): Docker/nginx/SSO, project manifests, sizing, security
+* [web/README.md](web/README.md): features and HTTP API
+
 ## Generate p01-p30
 
 The real-data fixtures are included in `tests/fixtures/reference_demo/`. Generate the main p01
@@ -126,6 +156,14 @@ src/genomecanvas/       Core package, models, transforms, layouts, and renderers
 examples/               Synthetic, advanced, and real-data figure generators
 tests/                  Unit, integration, and bundled reference-data checks
 docs/                   Architecture and scientific design documentation
+```
+
+Trackplot-parity extras (overlay, chromHMM, peaks, gene-symbol regions, profile
+plots, heatmaps, PCA, and differential peaks) are documented in `docs/TRACK_API.md`.
+Generate the mini demonstration with:
+
+```bash
+python -m examples.trackplot_parity.generate   # H1 ESC / OCT4 figures from trackplot demo data
 ```
 
 The main architecture is:

@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..core.coordinates import chrom_candidates
 from ..core.intervals import GenomicInterval
 from ..model.transcript import Transcript
 
@@ -24,17 +25,22 @@ def read_gtf(path: str | Path, *, chrom: str | None = None) -> list[Transcript]:
         if len(fields) != 9:
             raise ValueError(f"GTF line {line_number} must contain nine columns")
         record_chrom, _, feature_type, raw_start, raw_end, _, strand, _, raw_attrs = fields
-        if chrom is not None and record_chrom != chrom:
-            continue
+        if chrom is not None:
+            if (
+                record_chrom not in chrom_candidates(chrom)
+                and chrom not in chrom_candidates(record_chrom)
+            ):
+                continue
         attrs = _attributes(raw_attrs)
         transcript_id = attrs.get("transcript_id")
         gene_id = attrs.get("gene_id", "unknown")
+        gene_name = attrs.get("gene_name") or attrs.get("gene") or gene_id
         if transcript_id is None:
             continue
         start, end = int(raw_start) - 1, int(raw_end)
         bucket = records.setdefault(
             transcript_id,
-            {"gene_id": gene_id, "chrom": record_chrom, "strand": strand,
+            {"gene_id": gene_id, "gene_name": gene_name, "chrom": record_chrom, "strand": strand,
              "start": start, "end": end, "exons": []},
         )
         bucket["start"] = min(int(bucket["start"]), start)
@@ -51,6 +57,8 @@ def read_gtf(path: str | Path, *, chrom: str | None = None) -> list[Transcript]:
                 str(bucket["strand"]),
             ),
             exons=tuple(bucket["exons"]),
+            name=str(bucket.get("gene_name") or bucket["gene_id"]),
+            metadata={"gene_name": str(bucket.get("gene_name") or bucket["gene_id"])},
         )
         for transcript_id, bucket in sorted(records.items())
     ]

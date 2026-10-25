@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="GenomeCanvas Figure Studio: publication-ready genomic tracks, enrichment heatmaps, sample relationships and signal transformations.">
+<title>GenomeCanvas Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6f68'/%3E%3Cpath d='M6 22c3-10 5-10 7-4s4 6 6-2 4-8 7 0' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<script defer src="app.js"></script>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M6 22c3-10 5-10 7-4s4 6 6-2 4-8 7 0"/></svg>
+      <span>GenomeCanvas<em>Studio</em></span>
+    </div>
+    <label class="project-pick" title="Project">
+      <select id="project" aria-label="Project"></select>
+    </label>
+    <nav id="categories" class="categories" aria-label="Plot categories"></nav>
+    <div class="top-actions">
+      <span id="rolechip" class="chip" hidden>View only</span>
+      <label class="live" title="Re-plot automatically after each change">
+        <input type="checkbox" id="live"> <span>Live</span>
+      </label>
+      <button id="run" class="btn primary" title="Plot (⌘/Ctrl + Enter)">
+        <span class="run-label">Plot</span><kbd>⌘↵</kbd>
+      </button>
+      <button id="theme" class="btn icon" title="Toggle light / dark interface" aria-label="Toggle interface theme">
+        <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+      <div class="menu-wrap">
+        <button class="btn icon avatar" id="userbtn" aria-expanded="false" aria-label="Account"></button>
+        <div class="menu" id="usermenu" hidden></div>
+      </div>
+    </div>
+  </header>
+  <div id="plots" class="plots" role="tablist" aria-label="Plot type"></div>
+
+  <div class="workspace">
+    <aside class="panel data" aria-label="Data">
+      <div class="panel-head">
+        <h2>Data</h2>
+        <div class="seg" role="tablist" id="datatabs">
+          <button role="tab" data-tab="files" aria-selected="true">Files</button>
+          <button role="tab" data-tab="figures" aria-selected="false">Saved figures <span id="figcount" class="count"></span></button>
+        </div>
+      </div>
+      <div class="panel-body" id="tab-files">
+        <div id="projectinfo" class="project-info"></div>
+        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload files">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <div><strong>Drop files</strong> or click to add your own</div>
+          <small>BigWig · bedGraph · BED / narrowPeak / broadPeak · GTF</small>
+          <input type="file" id="fileinput" multiple hidden accept=".bw,.bigwig,.bedgraph,.bdg,.bg,.bed,.narrowpeak,.broadpeak,.gtf">
+        </div>
+        <div id="uploads"></div>
+        <div id="needs" class="needs"></div>
+        <div id="filelist"></div>
+      </div>
+      <div class="panel-body" id="tab-figures" hidden>
+        <p class="hint">Figures saved in this project, with the exact settings used. Everyone on the project can see them.</p>
+        <div id="figures" class="figures"></div>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div class="stage-bar">
+        <div class="crumbs"><span id="crumb-cat"></span><span class="sep">/</span><strong id="crumb-plot"></strong><span id="savedname" class="chip" hidden></span></div>
+        <div class="stage-tools">
+          <div class="seg small" id="viewtoggle" aria-label="View" hidden>
+            <button data-view="interactive" title="Hover for details; drag labels to tidy them">Interactive</button>
+            <button data-view="static" title="The exported PNG/PDF/SVG">Static</button>
+          </div>
+          <div class="seg small" id="zoom" aria-label="Zoom">
+            <button data-zoom="out" title="Zoom out">−</button>
+            <button data-zoom="fit" title="Fit to view" aria-pressed="true">Fit</button>
+            <button data-zoom="1" title="Actual print size">1:1</button>
+            <button data-zoom="in" title="Zoom in">+</button>
+          </div>
+          <button class="btn ghost small" id="bgtoggle" title="Preview on a checkerboard to show transparency">Checker</button>
+          <button class="btn small" id="savebtn" disabled title="Save this figure and its settings to the project">Save</button>
+          <div class="menu-wrap">
+            <button class="btn small" id="exportbtn" aria-expanded="false">Download ▾</button>
+            <div class="menu" id="exportmenu" hidden></div>
+          </div>
+        </div>
+      </div>
+      <div class="canvas" id="canvas">
+        <div class="paper" id="paper">
+          <div id="placeholder" class="placeholder">
+            <svg viewBox="0 0 120 64" aria-hidden="true"><path d="M4 52c10-30 18-30 24-12s12 18 18-6 12-30 20-8 12 22 18 6 10-18 18-12 10 10 14 6"/></svg>
+            <h3>Choose data, then plot</h3>
+            <p>Pick files on the left, a plot type above, then press Plot.</p>
+          </div>
+          <img id="figure" alt="" hidden>
+          <div id="interactive" class="interactive" hidden></div>
+        </div>
+        <div id="busy" class="busy" hidden><div class="spinner"></div><span id="busytext">Plotting…</span></div>
+      </div>
+      <div class="history" id="history" aria-label="Recent figures"></div>
+    </main>
+
+    <aside class="panel settings" aria-label="Settings">
+      <div class="panel-head">
+        <h2>Settings</h2>
+        <div class="head-actions">
+          <div class="menu-wrap">
+            <button class="btn ghost small" id="tplbtn" aria-expanded="false">Templates ▾</button>
+            <div class="menu" id="tplmenu" hidden></div>
+          </div>
+          <button class="btn ghost small" id="resetsettings" title="Restore defaults for this plot">Reset</button>
+          <div class="menu-wrap">
+            <button class="btn ghost small" id="configbtn" aria-expanded="false">Config ▾</button>
+            <div class="menu" id="configmenu" hidden>
+              <button data-act="save">Save configuration (.json)</button>
+              <button data-act="load">Load configuration…</button>
+              <button data-act="copy">Copy as JSON</button>
+              <input type="file" id="configinput" accept=".json" hidden>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-search"><input type="search" id="settingsearch" class="input" placeholder="Search settings…  ( / )"></div>
+      <div class="panel-body" id="settingsbody"></div>
+    </aside>
+  </div>
+
+  <footer class="statusbar">
+    <span id="status" aria-live="polite">Connecting…</span>
+    <span id="engine" class="muted"></span>
+  </footer>
+</div>
+<dialog id="dialog" class="dialog">
+  <form method="dialog" id="dialogform">
+    <h3 id="dialogtitle"></h3>
+    <div id="dialogbody"></div>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn ghost" formnovalidate>Cancel</button>
+      <button value="ok" class="btn primary" id="dialogok">OK</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+<noscript>GenomeCanvas Studio requires JavaScript.</noscript>
+</body>
+</html>

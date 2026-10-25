@@ -536,6 +536,7 @@ def zoom_panel(
 
 
 def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
     panel_grid("p02_isoforms", LOCI14, gene_names=["Myh6", "Myh7", "Bcl2l2", "Pabpn1"])
     region_panel("p03_single_region", [(54_880_000, 54_930_000, "Region 1", "#66c2a5")])
     region_panel(
