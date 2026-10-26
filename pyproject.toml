@@ -20,6 +20,7 @@ studio = ["pyBigWig>=0.3.25", "scipy>=1.10", "scikit-learn>=1.3", "plotly>=5.9"]
 [project.scripts]
 gcanvas = "genomecanvas.cli.main:main"
 gcanvas-studio = "genomecanvas.studio.cli:main"
+gcanvas-profileseg = "genomecanvas.profileseg.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/genomecanvas"]

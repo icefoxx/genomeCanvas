@@ -110,6 +110,29 @@ journal-size exports and an auto-generated Methods paragraph.
 * [docs/STUDIO_DEPLOY.md](docs/STUDIO_DEPLOY.md): Docker/nginx/SSO, project manifests, sizing, security
 * [web/README.md](web/README.md): features and HTTP API
 
+## ProfileSeg: amplitude vs shape of aligned profiles (beta)
+
+Replicate-aware comparison of coverage profiles around predefined anchors (TSS, ATG, summits,
+motif or cut sites, nucleosome dyads) between two conditions. It reports **amplitude** and
+**shape** changes separately, for the typical region and per region, with biological replicates
+as the unit of inference (works with 2 vs 2).
+
+```bash
+gcanvas-profileseg example --out profileseg_example    # synthetic data, full report
+gcanvas-profileseg init --out config.yaml             # then edit the manifest and regions it points to
+gcanvas-profileseg run --config config.yaml
+gcanvas-profileseg power --replicates 2 3 4             # power guidance
+```
+
+Suited to: MNase-seq / ATAC nucleosome organisation, Pol II ChIP / PRO-seq pausing, TF ChIP /
+CUT&RUN binding redistribution, cut-site (DNA damage) profiles, histone-mark spreading around TSS.
+Not suited to: anchor-free genome-wide discovery, very broad domains, absolute global changes without
+spike-ins.
+
+* [docs/PROFILESEG.md](docs/PROFILESEG.md): usage, metrics, outputs
+* [docs/PROFILESEG_APPLICATIONS.md](docs/PROFILESEG_APPLICATIONS.md): scenarios, design guidance, comparison with MMDiff2, IWTomics, DANPOS, DiffBind/csaw
+* [docs/PROFILESEG_COMPARISON.md](docs/PROFILESEG_COMPARISON.md): benchmarks, frozen validations, real-data checks
+
 ## Generate p01-p30
 
 The real-data fixtures are included in `tests/fixtures/reference_demo/`. Generate the main p01
