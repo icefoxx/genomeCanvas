@@ -470,3 +470,66 @@ def test_kernel_test_does_not_turn_amplitude_changes_into_shape_calls():
         cfg = Config(reference="WT", alternative="KO", flank=3000, binsize=10, bootstrap=10)
         res = per_region_tests(analyse(profiles, cfg, bootstrap=0))
         assert (res.tests["shape_kernel"]["call"] == "Changed").mean() < 0.005
+
+
+def _write_test_bam(path, fragments, chrom_len=20_000):
+    pysam = pytest.importorskip("pysam")
+    header = {"HD": {"VN": "1.6", "SO": "unsorted"}, "SQ": [{"SN": "chrT", "LN": chrom_len}]}
+    tmp = str(path) + ".unsorted.bam"
+    with pysam.AlignmentFile(tmp, "wb", header=header) as bam:
+        for j, (s, L) in enumerate(fragments):
+            for first in (True, False):
+                a = pysam.AlignedSegment()
+                a.query_name, a.query_sequence, a.flag = f"f{j}", "A" * 30, 99 if first else 147
+                a.reference_id, a.mapping_quality, a.cigarstring = 0, 60, "30M"
+                a.reference_start = s if first else s + L - 30
+                a.next_reference_id, a.next_reference_start = 0, (s + L - 30 if first else s)
+                a.template_length = L if first else -L
+                a.query_qualities = pysam.qualitystring_to_array("I" * 30)
+                bam.write(a)
+    pysam.sort("-o", str(path), tmp)
+    pysam.index(str(path))
+
+
+def test_bam_reader_counts_fragment_midpoints_and_filters(tmp_path):
+    from genomecanvas.profileseg.bamio import BamOptions, read_bam
+
+    bam = tmp_path / "t.bam"
+    # anchor at 10,000: fragments with midpoints at +50 (150 bp), −100 (150 bp) and +50 (600 bp)
+    _write_test_bam(bam, [(10_050 - 75, 150), (9_900 - 75, 150), (10_050 - 300, 600)])
+    edges = np.arange(-500, 510, 10, dtype=float)
+    regions = [dict(chrom="chrT", start=10_000, end=10_001, strand="+")]
+    b = read_bam(str(bam), regions, np.array([10_000.0]), edges, True, BamOptions(max_fragment=1000))
+    assert b.paired and b.fragments_per_region[0] == 3
+    assert b.counts[0, np.searchsorted(edges, 50, side="right") - 1] == 2
+    assert b.counts[0, np.searchsorted(edges, -100, side="right") - 1] == 1
+    # size selection drops the 600 bp fragment; a minus-strand anchor mirrors positions
+    b2 = read_bam(str(bam), [dict(regions[0], strand="-")], np.array([10_000.0]), edges, True,
+                  BamOptions(max_fragment=200))
+    assert b2.fragments_per_region[0] == 2
+    assert b2.counts[0, np.searchsorted(edges, -50, side="right") - 1] == 1
+    assert b2.counts[0, np.searchsorted(edges, 100, side="right") - 1] == 1
+
+
+def test_bigwig_count_unit_recovers_quantum_and_footprint(tmp_path):
+    pyBigWig = pytest.importorskip("pyBigWig")
+    from genomecanvas.profileseg.data import bigwig_count_unit
+
+    rng = np.random.default_rng(3)
+    L, scale, flen = 2_000_000, 0.37, 150
+    cov = np.zeros(L + 1)
+    starts = rng.integers(0, L - flen, 4000)
+    np.add.at(cov, starts, 1.0)
+    np.add.at(cov, starts + flen, -1.0)
+    cov = np.cumsum(cov)[:L] * scale
+    change = np.flatnonzero(np.diff(cov)) + 1
+    b = np.r_[0, change, L]
+    v = cov[b[:-1]]
+    keep = v > 0
+    path = tmp_path / "t.bw"
+    bw = pyBigWig.open(str(path), "w")
+    bw.addHeader([("chrT", L)])
+    bw.addEntries(["chrT"] * int(keep.sum()), b[:-1][keep].tolist(), ends=b[1:][keep].tolist(), values=v[keep].tolist())
+    bw.close()
+    q, footprint = bigwig_count_unit(str(path))
+    assert abs(q - scale) < 1e-6 and abs(footprint - flen) <= 5

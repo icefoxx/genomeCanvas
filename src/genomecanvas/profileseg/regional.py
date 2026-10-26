@@ -37,6 +37,9 @@ KERNEL_SUPPORT_FRACTION = None  # full core window: restricting to the support l
 KERNEL_SIGMA_BP = 60.0
 KERNEL_S0_QUANTILE = 0.5
 TEMPLATE_SMOOTH = 5  # template of the shift score test (calibration validated with this value)
+# Depth diagnostic: per-region shape tests had power with ~400 fragments per region and sample (yeast
+# MNase) and none with ~10 (TF CUT&RUN); below this median the report warns.
+LOW_DEPTH_FRAGMENTS = 50
 # Effect-size estimator for `shift`: stronger smoothing and condition-blind template refinement
 # (benchmarks/profileseg_shift_estimate_tuning.py: worst-cell estimate/true ratio 0.58 → 0.73).
 SHIFT_FIT_SMOOTH = 7
@@ -166,6 +169,7 @@ class RegionalResult:
     classes: list = field(default_factory=list)  # condition-blind shape classes: per-class summaries
     class_templates: np.ndarray | None = None
     class_labels: np.ndarray | None = None  # per shape-tested region (order of the shape tests)
+    depth: dict = field(default_factory=dict)  # fragments per region and sample (exact for BAM, estimated for bigWig)
 
 
 def amplitude_matrices(a: Analysis) -> tuple[np.ndarray, dict]:
@@ -676,6 +680,25 @@ def per_region_tests(a: Analysis, fdr: float = 0.05, shape_quantile: float = 0.0
         diff, lo, hi, pw, df = _welch(summary[ref], summary[alt], c.confidence)
         robust.append(dict(metric=f"median_region_{name}", estimate=diff, welch_low=lo, welch_high=hi,
                            welch_p=pw, welch_df=df, n_regions=int(len(sidx))))
+    depth = {}
+    frags = getattr(a.profiles, "fragments", None)
+    if frags is not None and len(sidx):
+        use = np.r_[a.ref_idx, a.alt_idx]
+        f = np.asarray(frags)[use][:, sidx]
+        exact = a.profiles.provenance.get("source") == "bam"
+        med = np.nanmedian(f, axis=1)
+        low = float(np.mean(np.nanmin(f, axis=0) < LOW_DEPTH_FRAGMENTS))
+        names_d = [a.profiles.samples[i]["sample_id"] for i in use]
+        depth = dict(source="BAM (exact)" if exact else "bigWig (estimated from the count quantum)",
+                     median_fragments=dict(zip(names_d, med.round(1).tolist(), strict=True)),
+                     low_depth_share=low, threshold=LOW_DEPTH_FRAGMENTS)
+        if np.nanmedian(med) < LOW_DEPTH_FRAGMENTS:
+            notes.append(f"low depth: median {np.nanmedian(med):.0f} fragments per region and sample "
+                         f"({depth['source']}); per-region shape tests have little power below ~{LOW_DEPTH_FRAGMENTS} — "
+                         "a non-significant region is not evidence of no change")
+        elif low > 0.25:
+            notes.append(f"{low:.0%} of shape-tested regions have fewer than {LOW_DEPTH_FRAGMENTS} fragments in some sample "
+                         f"({depth['source']}); power is low there")
     influence = {}
     if len(sidx) >= 20:
         calls = {m: tests[m]["call"] for m in ("shape_kernel", "shift") if m in tests}
@@ -685,7 +708,7 @@ def per_region_tests(a: Analysis, fdr: float = 0.05, shape_quantile: float = 0.0
     return RegionalResult(regions=comp, tests=tests, robust_global=robust, shape_regions=int(len(sidx)), notes=notes,
                           strength_trend=trend, influence=influence, classes=class_rows,
                           class_templates=None if classes is None else classes.templates,
-                          class_labels=None if classes is None else classes.labels)
+                          class_labels=None if classes is None else classes.labels, depth=depth)
 
 
 def _n_assignments(n1: int, n2: int) -> int:

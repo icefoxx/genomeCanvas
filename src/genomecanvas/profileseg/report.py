@@ -419,6 +419,12 @@ def write_regional(a: Analysis, regional, out: Path) -> None:
               "position change in bp. `centroid` / `mad_width` (full-window moments) are kept for continuity and have low "
               "power on broad profiles.", ""]
     lines += [f"* {n}" for n in regional.notes]
+    if regional.depth:
+        dep = regional.depth
+        lines += ["", f"## Depth ({dep['source']})", "",
+                  "| sample | median fragments per shape-tested region |", "|---|---|"]
+        lines += [f"| {k} | {v:.0f} |" for k, v in dep["median_fragments"].items()]
+        lines += ["", f"Share of regions with fewer than {dep['threshold']} fragments in some sample: {dep['low_depth_share']:.0%}."]
     if regional.classes:
         lines += ["", "## Shape classes (condition-blind, descriptive)", "",
                   "Classes from a shift-only k-mean alignment of the pooled profiles (all samples, labels unused). "

@@ -203,7 +203,8 @@ def familywise(records: list[dict], exact: bool = False) -> list[dict]:
 
 
 REGION_TOLERANCE = dict(log2_auc=0.1, log2_signal=0.1, log2_signal_relative=0.1, log2_enrichment=0.1, centroid=10.0,
-                        mad_width=10.0, shift=10.0, shape_kernel=0.5, log2_scale=0.05)
+                        mad_width=10.0, shift=10.0, shape_kernel=0.5, log2_scale=0.05, log2_count=0.1,
+                        log2_count_relative=0.1)
 
 
 def region_truth(scenario, settings, config, templates, seed) -> dict:
@@ -225,6 +226,11 @@ def region_truth(scenario, settings, config, templates, seed) -> dict:
     unchanged = truth["regions"]["amp_rel"][comp] == 0
     d = out["log2_signal"][1]
     out["log2_signal_relative"] = (comp, d - np.median(d[unchanged]))
+    # count metrics: expected core counts (noise-free values; library factors cancel in the CPM)
+    core = M.core_mask(profiles.edges, config.core_flank)
+    cc = np.log2(np.nansum(profiles.values[:, comp][..., core], axis=-1))
+    out["log2_count"] = (comp, diff(cc))
+    out["log2_count_relative"] = (comp, diff(cc) - np.median(diff(cc)[unchanged]))
     # Full-window moments, as in per_region_tests (regions with positive mass in every sample).
     pos = comp[np.all(a.core_mass[:, comp] > 0, axis=0)]
     e = a.core_edges
@@ -245,7 +251,8 @@ REGIONAL_SCENARIOS = ("null", "amplitude", "global_scale", "shift", "broaden", "
 
 
 def run_regional_benchmark(scenarios=REGIONAL_SCENARIOS, reps: int = 20, settings: SimSettings | None = None,
-                           config: Config | None = None, templates=None, seed: int = 5000, fdr: float = 0.05) -> dict:
+                           config: Config | None = None, templates=None, seed: int = 5000, fdr: float = 0.05,
+                           with_counts: bool = False) -> dict:
     from .regional import per_region_tests
 
     settings = settings or SimSettings()
@@ -254,7 +261,11 @@ def run_regional_benchmark(scenarios=REGIONAL_SCENARIOS, reps: int = 20, setting
     for s_index, scenario in enumerate(scenarios):
         for rep in range(reps):
             run_seed = seed + 7919 * s_index + rep + 1
-            profiles, _ = simulate(scenario, settings, seed=run_seed, templates=templates)
+            profiles, sim_truth = simulate(scenario, settings, seed=run_seed, templates=templates)
+            if with_counts:  # count input: values × library factor are the simulated integer counts
+                lib = np.asarray(sim_truth["library"], float)
+                profiles.counts = np.rint(np.nan_to_num(profiles.values) * lib[:, None, None])
+                profiles.library_sizes = lib * 1e7  # sequencing-depth proxy, independent of region composition
             a = analyse(profiles, config, bootstrap=20)
             res = per_region_tests(a, fdr=fdr)
             true = region_truth(scenario, settings, config, templates, run_seed)
@@ -270,9 +281,15 @@ def run_regional_benchmark(scenarios=REGIONAL_SCENARIOS, reps: int = 20, setting
                 false = called & (tr == 0)
                 wrong_dir = called & (tr != 0) & (sign != tr)
                 true_pos = called & (tr != 0) & (sign == tr)
+                # exact nulls: the noise-free effect is null (≤ 1 % of the tolerance); calls of real
+                # effects smaller than the tolerance are not type I errors
+                exact = np.abs(np.nan_to_num(eff)) <= 0.01 * REGION_TOLERANCE[metric]
+                false_exact = called & exact
                 records.append(dict(
                     scenario=scenario, rep=rep, metric=metric, tested=int(len(tr)), discoveries=int(called.sum()),
                     false=int(false.sum()), wrong_direction=int(wrong_dir.sum()), true_changes=int((tr != 0).sum()),
+                    exact_nulls=int(exact.sum()), false_exact=int(false_exact.sum()),
+                    fdp_exact=float(false_exact.sum() / max(called.sum(), 1)),
                     fdp=float((false.sum() + wrong_dir.sum()) / max(called.sum(), 1)),
                     power=float(true_pos.sum() / (tr != 0).sum()) if (tr != 0).any() else np.nan,
                 ))
@@ -288,6 +305,9 @@ def run_regional_benchmark(scenarios=REGIONAL_SCENARIOS, reps: int = 20, setting
                 true_changes=float(np.mean([r["true_changes"] for r in rows])),
                 discoveries=float(np.mean([r["discoveries"] for r in rows])),
                 fdr=float(np.mean([r["fdp"] for r in rows])),
+                fdr_exact=float(np.mean([r["fdp_exact"] for r in rows])),
+                exact_nulls=float(np.mean([r["exact_nulls"] for r in rows])),
+                false_exact_share=float(np.mean([r["false_exact"] / max(r["exact_nulls"], 1) for r in rows])),
                 runs_with_any_false=float(np.mean([(r["false"] + r["wrong_direction"]) > 0 for r in rows])),
                 power=float(np.mean(powers)) if powers else np.nan,
             ))

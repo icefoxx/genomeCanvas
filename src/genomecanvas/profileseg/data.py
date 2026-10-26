@@ -70,6 +70,15 @@ class Config:
     # within batches (more power for balanced designs, FDP ~0.07 vs ~0.03 on real yeast data).
     batch_aware: bool = True
     batch_permutation: str = "free"
+    # BAM input (v3; signal files ending in .bam/.cram): see profileseg/bamio.py
+    bam_mode: str = "midpoint"  # midpoint | coverage | end5 | end3
+    bam_min_mapq: int = 10
+    bam_proper_pairs: bool = True
+    bam_remove_duplicates: bool = True
+    bam_min_fragment: int = 0
+    bam_max_fragment: int = 1000
+    bam_fragment_length: int = 0  # single-end extension; 0 = estimate from strand cross-correlation
+    bam_strand: str = "any"  # end modes: any | sense | antisense
     align_max_shift: int = 150
     center_half: int = 250
     primary_amplitude: str = "log2_auc"
@@ -125,6 +134,9 @@ _ALIASES = {
     "shape.align_max_shift": "align_max_shift",
     "inference.batch_aware": "batch_aware",
     "inference.batch_permutation": "batch_permutation",
+    "bam.mode": "bam_mode", "bam.min_mapq": "bam_min_mapq", "bam.proper_pairs": "bam_proper_pairs",
+    "bam.remove_duplicates": "bam_remove_duplicates", "bam.min_fragment": "bam_min_fragment",
+    "bam.max_fragment": "bam_max_fragment", "bam.fragment_length": "bam_fragment_length", "bam.strand": "bam_strand",
     "amplitude.center_half": "center_half",
     "inference.primary_amplitude": "primary_amplitude", "inference.primary_shape": "primary_shape",
     "inference.bootstrap": "bootstrap", "inference.region_fdr": "region_fdr",
@@ -149,6 +161,10 @@ def validate_config(c: Config) -> None:
         raise ValueError("region_weighting must be shrunk, shrunk_sample, equal or signal")
     if not 0 < c.align_max_shift < c.core_flank:
         raise ValueError("shape.align_max_shift must be positive and smaller than core_flank")
+    if c.bam_mode not in ("midpoint", "coverage", "end5", "end3"):
+        raise ValueError("bam.mode must be midpoint, coverage, end5 or end3")
+    if c.bam_strand not in ("any", "sense", "antisense"):
+        raise ValueError("bam.strand must be any, sense or antisense")
     if c.batch_permutation not in ("free", "within"):
         raise ValueError("inference.batch_permutation must be free or within")
     if c.bootstrap < 10:
@@ -264,6 +280,11 @@ class Profiles:
     regions: list[dict]
     oriented: bool
     provenance: dict = field(default_factory=dict)
+    # BAM input only (v3): raw counts behind `values`, fragments per region, library sizes, QC
+    counts: np.ndarray | None = None
+    fragments: np.ndarray | None = None  # samples × regions
+    library_sizes: np.ndarray | None = None
+    qc: dict = field(default_factory=dict)
 
     @property
     def conditions(self) -> np.ndarray:
@@ -344,6 +365,54 @@ def resolve_orientation(config: Config, regions: list[dict]) -> bool:
     return stranded and config.anchor in ("start", "end")
 
 
+def bigwig_count_unit(path: str, max_chroms: int = 6) -> tuple[float, float] | None:
+    """(quantum, footprint) of a coverage track, or None.
+
+    Most pipelines store integer counts times a scale factor (CPM, RPKM, spike-in), so the smallest
+    positive values are 1, 2, 3 … times one quantum. The footprint — how many bp one fragment occupies
+    in the track — depends on how the track was built (≈ fragment length for coverage, 1 bp for
+    midpoint / end tracks, the bin size for binned counts). It is measured from isolated stretches whose
+    value is exactly one quantum (single fragments in sparse areas). Fragments in a window are then
+    area / (quantum × footprint).
+    """
+    try:
+        import pyBigWig
+    except ImportError:
+        return None
+    h = pyBigWig.open(str(path))
+    vals, runs = [], []
+    for c in list(h.chroms())[:max_chroms]:
+        iv = h.intervals(c)
+        if not iv:
+            continue
+        a = np.asarray(iv, dtype=float)
+        vals.append(a[:, 2])
+        runs.append(a)
+    h.close()
+    if not vals:
+        return None
+    v = np.concatenate(vals)
+    pos = np.unique(np.round(v[v > 0], 9))
+    if len(pos) < 3 or not np.allclose(pos[:3] / pos[0], [1, 2, 3], rtol=0.01):
+        return None
+    q = float(pos[0])
+    lengths = []
+    for a in runs:  # contiguous non-zero stretches whose values are all one quantum (vectorised)
+        nz = a[:, 2] > 0
+        brk = np.r_[True, (a[1:, 0] != a[:-1, 1]) | ~nz[1:] | ~nz[:-1]]
+        ids = np.cumsum(brk)[nz]
+        unit = np.isclose(a[nz, 2], q, rtol=0.01)
+        n_all = np.bincount(ids)
+        n_unit = np.bincount(ids, weights=unit)
+        length = np.bincount(ids, weights=a[nz, 1] - a[nz, 0])
+        single = (n_all > 0) & (n_unit == n_all)
+        lengths.append(length[single])
+    lengths = np.concatenate(lengths) if lengths else np.zeros(0)
+    if len(lengths) < 50:
+        return None
+    return q, float(np.median(lengths))
+
+
 def extract(config: Config, samples: list[dict], regions: list[dict]) -> Profiles:
     """bigWig/bedGraph → tensor using the GenomeCanvas window reader (NaN beyond chromosome ends)."""
     from ..pipeline.genome_bins import window_matrix
@@ -360,6 +429,35 @@ def extract(config: Config, samples: list[dict], regions: list[dict]) -> Profile
         minus.append(neg)
     minus = np.array(minus)
     values = np.empty((len(samples), len(regions), n_bins))
+    edges = np.arange(-flank, flank + binsize, binsize, dtype=float)
+    is_bam = [str(s["signal_file"]).lower().endswith((".bam", ".cram")) for s in samples]
+    if any(is_bam) and not all(is_bam):
+        raise ValueError("mix of BAM and coverage-track inputs: use one input type for all samples")
+    if all(is_bam):
+        from .bamio import BamOptions, fragment_length_summary, read_bam
+        opt = BamOptions(mode=config.bam_mode, min_mapq=config.bam_min_mapq, proper_pairs=config.bam_proper_pairs,
+                         remove_duplicates=config.bam_remove_duplicates, min_fragment=config.bam_min_fragment,
+                         max_fragment=config.bam_max_fragment, fragment_length=config.bam_fragment_length or None,
+                         strand=config.bam_strand)
+        anchors = np.array([anchor_base(r, config.anchor) for r in regions], dtype=float)
+        counts = np.empty_like(values)
+        frags = np.empty((len(samples), len(regions)))
+        libs = np.empty(len(samples))
+        qc = {}
+        for i, sample in enumerate(samples):
+            path = config.path(sample["signal_file"])
+            if not path.is_file():
+                raise FileNotFoundError(f"signal file for {sample['sample_id']} not found: {path}")
+            b = read_bam(str(path), regions, anchors, edges, oriented, opt)
+            counts[i], frags[i], libs[i] = b.counts, b.fragments_per_region, b.library_size
+            values[i] = b.counts / max(b.library_size, 1.0) * 1e6  # CPM per bin
+            qc[sample["sample_id"]] = dict(paired=b.paired, fragment_length=b.fragment_length,
+                                           library_size=b.library_size, **fragment_length_summary(b.fragment_hist))
+        return Profiles(values, edges, samples, regions, oriented,
+                        provenance=dict(source="bam", mode=opt.mode, anchor=config.anchor, flank=flank, binsize=binsize),
+                        counts=counts, fragments=frags, library_sizes=libs, qc=qc)
+    frags = np.full((len(samples), len(regions)), np.nan)
+    qc = {}
     for i, sample in enumerate(samples):
         path = config.path(sample["signal_file"])
         if not path.is_file():
@@ -367,7 +465,11 @@ def extract(config: Config, samples: list[dict], regions: list[dict]) -> Profile
         block = window_matrix(str(path), windows, n_bins, "mean")
         block[minus] = block[minus, ::-1]
         values[i] = block
-    edges = np.arange(-flank, flank + binsize, binsize, dtype=float)
+        # depth estimate: coverage area / (count quantum × single-fragment footprint), both read from the track
+        unit = bigwig_count_unit(str(path)) if str(path).lower().endswith((".bw", ".bigwig")) else None
+        if unit:
+            frags[i] = np.nansum(block, axis=-1) * binsize / (unit[0] * unit[1])
+        qc[sample["sample_id"]] = dict(count_quantum=unit[0] if unit else None, footprint_bp=unit[1] if unit else None)
     return Profiles(
         values,
         edges,
@@ -375,6 +477,8 @@ def extract(config: Config, samples: list[dict], regions: list[dict]) -> Profile
         regions,
         oriented,
         provenance=dict(source="bigwig", anchor=config.anchor, flank=flank, binsize=binsize),
+        fragments=frags if np.isfinite(frags).any() else None,
+        qc=qc,
     )
 
 
