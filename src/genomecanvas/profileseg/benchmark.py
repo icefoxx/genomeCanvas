@@ -12,6 +12,7 @@ from dataclasses import asdict
 
 import numpy as np
 
+from . import metrics as M
 from .analysis import analyse
 from .data import Config
 from .simulate import SCENARIOS, SimSettings, simulate
@@ -93,6 +94,7 @@ def run_benchmark(
                         seed=run_seed,
                         metric=e["metric"],
                         expected=expected,
+                        exact_null=bool(abs(truth) <= 0.01 * TOLERANCE[e["metric"]]),
                         estimate=e["estimate"],
                         truth=truth,
                         welch_flag=welch_flag,
@@ -148,6 +150,7 @@ def summarise(records: list[dict]) -> list[dict]:
                 scenario=scenario,
                 metric=metric,
                 expected=expected,
+                exact_null=bool(all(r.get("exact_null", False) for r in rows)),
                 n=n,
                 welch_flag_rate=float(np.mean([r["welch_flag"] for r in rows])),
                 boot_flag_rate=float(np.mean([r["boot_flag"] for r in rows])),
@@ -168,7 +171,7 @@ def summarise(records: list[dict]) -> list[dict]:
     return out
 
 
-def familywise(records: list[dict]) -> list[dict]:
+def familywise(records: list[dict], exact: bool = False) -> list[dict]:
     """Per scenario: share of runs with ≥1 false *adjusted* call among metrics whose truth is ≈ 0.
 
     Uses the reported calls (primary metrics unadjusted, secondary Holm-adjusted, comparators
@@ -181,7 +184,7 @@ def familywise(records: list[dict]) -> list[dict]:
             if r["scenario"] != scenario or r.get("role") == "comparator" or r["metric"].startswith("naive"):
                 continue
             entry = runs.setdefault(r["rep"], dict(false=False, raw=False, eligible=0))
-            if r["expected"] == 0:
+            if (r.get("exact_null", False) if exact else r["expected"] == 0):
                 entry["eligible"] += 1
                 entry["false"] |= bool(r.get("adjusted_flag"))
                 entry["raw"] |= bool(r["welch_flag"])
@@ -199,7 +202,8 @@ def familywise(records: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------- v2: per-region FDR / power
 
 
-REGION_TOLERANCE = dict(log2_auc=0.1, log2_signal=0.1, log2_signal_relative=0.1, log2_enrichment=0.1, centroid=10.0, mad_width=10.0)
+REGION_TOLERANCE = dict(log2_auc=0.1, log2_signal=0.1, log2_signal_relative=0.1, log2_enrichment=0.1, centroid=10.0,
+                        mad_width=10.0, shift=10.0, shape_kernel=0.5, log2_scale=0.05)
 
 
 def region_truth(scenario, settings, config, templates, seed) -> dict:
@@ -208,7 +212,7 @@ def region_truth(scenario, settings, config, templates, seed) -> dict:
     Returns metric → (region indices, true difference). For the relative metric the reference level
     is the median change of regions the scenario leaves unchanged (its estimand: change vs the bulk).
     """
-    from .regional import amplitude_matrices, shape_matrices
+    from .regional import amplitude_matrices
 
     profiles, truth = simulate(scenario, settings, seed=seed, templates=templates, noiseless=True)
     a = analyse(profiles, config, bootstrap=20)
@@ -221,9 +225,18 @@ def region_truth(scenario, settings, config, templates, seed) -> dict:
     unchanged = truth["regions"]["amp_rel"][comp] == 0
     d = out["log2_signal"][1]
     out["log2_signal_relative"] = (comp, d - np.median(d[unchanged]))
+    # Full-window moments, as in per_region_tests (regions with positive mass in every sample).
     pos = comp[np.all(a.core_mass[:, comp] > 0, axis=0)]
-    for name, m in shape_matrices(a, pos).items():
-        out[name] = (pos, diff(m))
+    e = a.core_edges
+    p_full = M.normalise(a.core_signal[:, pos] * M.widths(e))
+    out["mad_width"] = (pos, diff(M.mean_abs_deviation(p_full, e)))
+    if profiles.oriented:
+        out["centroid"] = (pos, diff(M.centroid(p_full, e)))
+    # Shape tests: truth from the scenario (translation per region; broadening of every region).
+    shift_sign = np.asarray(truth["regions"]["shift"])[comp]
+    broad = scenario in ("broaden", "fragment_length")
+    out["shift"] = (comp, shift_sign * float(settings.shift_bp))
+    out["shape_kernel"] = (comp, ((shift_sign != 0) | broad).astype(float))
     return out
 
 
@@ -250,8 +263,10 @@ def run_regional_benchmark(scenarios=REGIONAL_SCENARIOS, reps: int = 20, setting
                 lookup = dict(zip(idx.tolist(), effect, strict=True))
                 eff = np.array([lookup.get(int(i), np.nan) for i in t["region_index"]])
                 tr = np.where(np.abs(np.nan_to_num(eff)) > REGION_TOLERANCE[metric], np.sign(eff), 0).astype(int)
-                called = np.isin(t["call"], ("Higher", "Lower"))
+                called = np.isin(t["call"], ("Higher", "Lower", "Changed"))
                 sign = np.where(t["call"] == "Higher", 1, np.where(t["call"] == "Lower", -1, 0))
+                if metric == "shape_kernel":  # omnibus: no direction
+                    sign = np.where(called, tr, 0)
                 false = called & (tr == 0)
                 wrong_dir = called & (tr != 0) & (sign != tr)
                 true_pos = called & (tr != 0) & (sign == tr)

@@ -165,8 +165,18 @@ def analyse(profiles: Profiles, config: Config, *, bootstrap: int | None = None)
     # Signed normalisation: zero-mean noise in low-signal tails averages out instead of being
     # clipped into a positive floor (which would again make taller peaks look narrower).
     p = M.normalise(agg)
-    if np.any(~np.isfinite(p)):
-        raise ValueError("an aggregate background-corrected profile has non-positive total mass")
+    bad = ~np.all(np.isfinite(p), axis=-1)
+    if bad.any():
+        # e.g. MNase arrays, where the flanks carry as much signal as the core: fall back to the
+        # clipped profile for those samples and say that aggregate shape metrics are unreliable.
+        clipped = M.normalise(np.clip(agg[bad], 0, None))
+        if np.any(~np.isfinite(clipped)):
+            raise ValueError("an aggregate background-corrected profile has no positive mass; check the background window")
+        p = p.copy()
+        p[bad] = clipped
+        flags.append(f"{int(bad.sum())} sample(s) have non-positive aggregate background-corrected mass; their aggregate "
+                     "profile was clipped at zero. Aggregate shape metrics are unreliable here (background window "
+                     "carries as much signal as the core); rely on the per-region tests")
     shape = _shape_metrics(p, core_edges)
 
     # Naive comparator: no background correction, whole window, same pooled scaling.
@@ -485,16 +495,22 @@ def primary_metrics(config: Config, oriented: bool) -> tuple[str, str]:
 
 
 def _assign_roles(a: Analysis, rows: list[dict]) -> None:
-    """Primary metrics keep their own interval; secondary metrics are Holm-adjusted together."""
+    """Primary metrics share α by Bonferroni (α/2 each, so the report's family-wise error stays at α);
+    secondary metrics are Holm-adjusted together."""
     amp, shape = primary_metrics(a.config, a.profiles.oriented)
     alpha = 1 - a.config.confidence
+    n_primary = sum(1 for r in rows if r["metric"] in (amp, shape))
     secondary = [r for r in rows if r["metric"] not in (amp, shape, "group_w1") and r["family"] != "naive"]
     for r, ph in zip(secondary, holm([r["welch_p"] for r in secondary]), strict=True):
         r["p_holm"] = ph
     for r in rows:
         r.setdefault("p_holm", np.nan)
+        r.setdefault("p_primary", np.nan)
         if r["metric"] in (amp, shape):
             r["role"] = "primary"
+            r["p_primary"] = min(1.0, r["welch_p"] * max(n_primary, 1)) if np.isfinite(r["welch_p"]) else np.nan
+            if r["call"] in ("higher", "lower") and not (r["p_primary"] < alpha):
+                r["call"] = "no clear change (Bonferroni across primary metrics)"
         elif r["family"] == "naive":
             r["role"] = "comparator"
             r["call"] = "comparator only (no background correction)"

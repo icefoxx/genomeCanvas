@@ -28,7 +28,6 @@ REGION_METRICS = {
     "log2_enrichment": "log2(centre signal / local background) per region; insensitive to global rescaling",
     "shape_kernel": "omnibus shape test (kernel distance between condition-mean profiles; pooled permutation null); no direction",
     "shift": "directional shift test (projection on the template derivative, pooled permutation null); estimate = shift in bp from a template fit",
-    "log2_scale": "log2 width scale relative to the pooled template, by template fit; exploratory",
     "centroid": "centre of mass of the background-corrected core profile (bp; oriented anchors); low power on broad profiles",
     "mad_width": "spread (mean absolute deviation, bp) of the background-corrected core profile; low power, exploratory",
 }
@@ -37,7 +36,11 @@ REGION_METRICS = {
 KERNEL_SUPPORT_FRACTION = None  # full core window: restricting to the support lost power on real shapes
 KERNEL_SIGMA_BP = 60.0
 KERNEL_S0_QUANTILE = 0.5
-TEMPLATE_SMOOTH = 5
+TEMPLATE_SMOOTH = 5  # template of the shift score test (calibration validated with this value)
+# Effect-size estimator for `shift`: stronger smoothing and condition-blind template refinement
+# (benchmarks/profileseg_shift_estimate_tuning.py: worst-cell estimate/true ratio 0.58 → 0.73).
+SHIFT_FIT_SMOOTH = 7
+SHIFT_FIT_REFINE = 3
 
 
 # ---------------------------------------------------------------- empirical Bayes (Smyth 2004)
@@ -160,6 +163,9 @@ class RegionalResult:
     notes: list = field(default_factory=list)
     strength_trend: float = float("nan")  # Spearman(relative change, signal strength)
     influence: dict = field(default_factory=dict)  # replicate robustness diagnostics (see replicate_influence)
+    classes: list = field(default_factory=list)  # condition-blind shape classes: per-class summaries
+    class_templates: np.ndarray | None = None
+    class_labels: np.ndarray | None = None  # per shape-tested region (order of the shape tests)
 
 
 def amplitude_matrices(a: Analysis) -> tuple[np.ndarray, dict]:
@@ -218,47 +224,115 @@ def _interp_rows(table: np.ndarray, pos: np.ndarray, x0: float, h: float) -> np.
 
 
 def template_fit(y: np.ndarray, cov: np.ndarray, edges: np.ndarray, smooth: int = 5, iterations: int = 4,
-                 floor: float = 0.05) -> dict:
+                 floor: float = 0.05, chunk: int = 2000, refine: int = 0) -> dict:
+    """Per-sample shift and log2 scale relative to each region's pooled template (see
+    :func:`_template_fit_block`); regions are processed in blocks to bound memory."""
+    R = y.shape[1]
+    if R <= chunk:
+        return _template_fit_block(y, cov, edges, smooth, iterations, floor, refine)
+    parts = [_template_fit_block(y[:, i:i + chunk], cov[:, i:i + chunk], edges, smooth, iterations, floor, refine)
+             for i in range(0, R, chunk)]
+    return {k: np.concatenate([q[k] for q in parts], axis=1) for k in parts[0]}
+
+
+def _template_fit_block(y: np.ndarray, cov: np.ndarray, edges: np.ndarray, smooth: int = 5, iterations: int = 4,
+                        floor: float = 0.05, refine: int = 0) -> dict:
     """Per-sample shift (bp) and log2 scale of each region relative to its pooled template.
 
     Model: y_s(x) ≈ k_s · T((x − μ − δ_s) / g_s + μ), with T the condition-blind pooled profile
     (lightly smoothed) and μ its centroid. Weighted Gauss–Newton (weights 1/coverage, Poisson-like)
     on bins where T exceeds ``floor`` of its maximum. Differences of δ between conditions estimate
     the shift with little attenuation, unlike support-restricted moments.
+
+    The pooled template of a region whose conditions differ is a blurred mixture, which attenuates
+    the estimated shifts. With ``refine`` > 0 the template is rebuilt from the samples re-aligned by
+    their own estimated shifts (no condition labels used) and the fit repeated.
     """
     c = M.centers(edges)
     h = float(np.median(np.diff(c)))
     y = np.nan_to_num(y)
-    T0 = np.clip(y.mean(axis=0), 0, None)
+    S, R, _ = y.shape
+    kern = None
     if smooth > 1:
         half = (smooth + 1) // 2
         kern = np.r_[np.arange(1, half + 1), np.arange(half - 1, 0, -1)].astype(float)
         kern /= kern.sum()
-        T0 = np.apply_along_axis(lambda r: np.convolve(r, kern, mode="same"), 1, T0)
-    mu = (T0 * c).sum(1) / np.maximum(T0.sum(1), 1e-12)
-    use = (T0 > floor * T0.max(1, keepdims=True))[None]
-    S, R, _ = y.shape
+
+    def make_template(profiles):
+        T = np.clip(profiles.mean(axis=0), 0, None)
+        return T if kern is None else np.apply_along_axis(lambda r: np.convolve(r, kern, mode="same"), 1, T)
+
+    T0 = make_template(y)
     delta, logg = np.zeros((S, R)), np.zeros((S, R))
-    wt = np.where(use, 1.0 / np.maximum(np.nan_to_num(cov), 1.0), 0.0)
-    mu_ = mu[None, :, None]
-    for _ in range(iterations):
-        g = 2.0 ** logg[..., None]
-        xs = (c - mu_ - delta[..., None]) / g + mu_
-        T = _interp_rows(T0, xs, c[0], h)
-        dT = np.gradient(T, h, axis=-1)
-        X = np.stack([T, -dT / g, -(xs - mu_) * dT * np.log(2)], axis=-1)  # S × R × B × 3
-        XtW = X * wt[..., None]
-        A = np.einsum("srbi,srbj->srij", XtW, X) + 1e-9 * np.eye(3)
-        b = np.einsum("srbi,srb->sri", XtW, y)
-        beta = np.linalg.solve(A, b[..., None])[..., 0]
-        k = np.where(np.abs(beta[..., 0]) > 1e-9, beta[..., 0], 1e-9)
-        delta = np.clip(delta + beta[..., 1] / k, -400, 400)
-        logg = np.clip(logg + beta[..., 2] / k, -1.5, 1.5)
+    for stage in range(refine + 1):
+        if stage:  # re-align each sample by its own shift (relative to the mean shift) and rebuild T
+            back = delta - delta.mean(0, keepdims=True)
+            aligned = _interp_rows(y.reshape(S * R, -1), (c + back.reshape(-1, 1)), c[0], h).reshape(y.shape)
+            T0 = make_template(aligned)
+            delta, logg = np.zeros((S, R)), np.zeros((S, R))
+        mu = (T0 * c).sum(1) / np.maximum(T0.sum(1), 1e-12)
+        use = (T0 > floor * T0.max(1, keepdims=True))[None]
+        wt = np.where(use, 1.0 / np.maximum(np.nan_to_num(cov), 1.0), 0.0)
+        mu_ = mu[None, :, None]
+        for _ in range(iterations):
+            g = 2.0 ** logg[..., None]
+            xs = (c - mu_ - delta[..., None]) / g + mu_
+            T = _interp_rows(T0, xs, c[0], h)
+            dT = np.gradient(T, h, axis=-1)
+            X = np.stack([T, -dT / g, -(xs - mu_) * dT * np.log(2)], axis=-1)  # S × R × B × 3
+            XtW = X * wt[..., None]
+            A = np.einsum("srbi,srbj->srij", XtW, X) + 1e-9 * np.eye(3)
+            b = np.einsum("srbi,srb->sri", XtW, y)
+            beta = np.linalg.solve(A, b[..., None])[..., 0]
+            k = np.where(np.abs(beta[..., 0]) > 1e-9, beta[..., 0], 1e-9)
+            delta = np.clip(delta + beta[..., 1] / k, -400, 400)
+            logg = np.clip(logg + beta[..., 2] / k, -1.5, 1.5)
     return dict(shift=delta, log2_scale=logg)
 
 
+def label_assignments(n1: int, n: int, blocks: np.ndarray | None = None) -> tuple[list[tuple], int]:
+    """Distinct replicate-label assignments (sets of indices called group A) and the index of the
+    observed one (the first n1 samples). An assignment and its mirror count once when n1 = n − n1.
+
+    With ``blocks`` (processing batches, one label per sample, in the same order) only assignments
+    that keep the observed number of group-A samples in every block are allowed: labels are
+    permuted within batches, so batch differences stay out of the null. If only the observed
+    assignment remains (e.g. condition and batch coincide), the test cannot be performed.
+    """
+    splits = [s for s in itertools.combinations(range(n), n1) if n1 != n - n1 or 0 in s]
+    if blocks is not None:
+        blocks = np.asarray(blocks)
+        obs = {b: int(np.sum(blocks[:n1] == b)) for b in np.unique(blocks)}
+        def keeps(sel):
+            return all(int(np.sum(blocks[list(sel)] == b)) == k for b, k in obs.items())
+        splits = [s for s in splits
+                  if keeps(s) or (n1 == n - n1 and keeps(tuple(np.setdiff1d(np.arange(n), s))))]
+    return splits, splits.index(tuple(range(n1)))
+
+
+def pooled_permutation_p(F: np.ndarray, obs_i: int, strata: np.ndarray | None = None, min_size: int = 30) -> np.ndarray:
+    """p-values of the observed row of F (assignments × regions) against the non-observed rows,
+    pooled over regions. ``strata`` (experimental, not used by ``per_region_tests``) pools within
+    strata of at least ``min_size`` regions; it was evaluated as shape-class stratification and
+    rejected (docs/PROFILESEG_COMPARISON.md §7)."""
+    obs = F[obs_i]
+    rest = np.delete(F, obs_i, axis=0)
+    p = np.empty(obs.shape)
+    groups = np.zeros(obs.shape, int) if strata is None else np.asarray(strata)
+    small = np.isin(groups, [g for g in np.unique(groups) if np.sum(groups == g) < min_size])
+    for g in np.unique(groups[~small]):
+        m = (groups == g) & ~small
+        null = np.sort(rest[:, m].ravel())
+        p[m] = (1 + null.size - np.searchsorted(null, obs[m], side="left")) / (1 + null.size)
+    if small.any():
+        null = np.sort(rest.ravel())
+        p[small] = (1 + null.size - np.searchsorted(null, obs[small], side="left")) / (1 + null.size)
+    return p
+
+
 def kernel_shape_test(y: np.ndarray, mask: np.ndarray, ref: np.ndarray, alt: np.ndarray, sigma_bp: float = 60.0,
-                      s0_quantile: float = 0.5, centers: np.ndarray | None = None) -> np.ndarray:
+                      s0_quantile: float = 0.5, centers: np.ndarray | None = None,
+                      strata: np.ndarray | None = None, blocks: np.ndarray | None = None) -> np.ndarray:
     """Omnibus per-region shape test: a kernel (MMD-type) distance between condition means of the
     mass-normalised profiles, scaled by within-condition spread, with a null pooled over regions
     and all non-observed replicate-label assignments.
@@ -273,36 +347,52 @@ def kernel_shape_test(y: np.ndarray, mask: np.ndarray, ref: np.ndarray, alt: np.
     anti-conservative once many regions change. s0 is therefore a quantile of the total spread
     (identical under every assignment), scaled to a per-sample variance.
     """
-    y = np.clip(np.nan_to_num(y), 0, None) * mask
-    p = y / np.maximum(y.sum(-1, keepdims=True), 1e-12)
+    # Normalisation: the signed (unclipped) background-corrected profile divided by its mass inside the
+    # condition-blind support of the pooled profile. Clipping noise at zero added a positive floor whose
+    # relative size grows as the signal weakens, so amplitude changes looked like broadening (4 vs 4,
+    # 10 bp bins: 1–3 % of regions called under amplitude-only changes). Dividing by the whole-window
+    # signed mass removed that bias but the near-zero, noisy denominator of broad profiles destroyed
+    # power; the support mass is a stable denominator that still cancels pure amplitude changes.
+    # Regions whose support mass is not positive in every sample are not tested (NaN).
+    y = np.nan_to_num(y) * mask
+    support = support_mask(y, 0.2)
+    mass = (y * support[None]).sum(-1)
+    testable = np.all(mass > 0, axis=0)
+    p = np.where(testable[None, :, None], y / np.where(mass > 0, mass, 1.0)[..., None], 0.0)
     c = np.arange(p.shape[-1], dtype=float) if centers is None else centers
     K = np.exp(-0.5 * ((c[:, None] - c[None, :]) / sigma_bp) ** 2)
+    # Kernel feature map: K = L Lᵀ (eigendecomposition; the Gaussian kernel is positive semi-definite),
+    # so xᵀ K x = ‖Lᵀ x‖². Distances become Euclidean in φ = p L: identical statistics, and each label
+    # assignment costs O(regions × bins) instead of O(regions × bins²).
+    lam, V = np.linalg.eigh(K)
+    keep = lam > 1e-10 * lam.max()  # numerically zero directions contribute nothing; a smooth kernel has low rank
+    L = V[:, keep] * np.sqrt(lam[keep])
     n1 = len(ref)
     n = n1 + len(alt)
-    p = p[np.r_[ref, alt]]
-    dev = p - p.mean(0)
-    total = np.einsum("srb,bc,src->r", dev, K, dev)
+    phi = p[np.r_[ref, alt]][:, testable] @ L  # untestable regions take no part in s0 or the null
+    total = ((phi - phi.mean(0)) ** 2).sum((0, 2))
     s0 = np.quantile(total / (n - 1), s0_quantile)
-    splits = [s for s in itertools.combinations(range(n), n1) if n1 != n - n1 or 0 in s]
+    splits, obs_i = label_assignments(n1, n, None if blocks is None else np.asarray(blocks)[np.r_[ref, alt]])
+    if len(splits) < 2 or not testable.any():
+        return np.full(p.shape[1], np.nan)
     F = []
     for s in splits:
         a = np.array(s)
         b = np.setdiff1d(np.arange(n), a)
-        ma, mb = p[a].mean(0), p[b].mean(0)
-        diff = ma - mb
-        D = np.einsum("rb,bc,rc->r", diff, K, diff)
-        res = np.concatenate([p[a] - ma, p[b] - mb])
-        W = np.einsum("srb,bc,src->r", res, K, res) / max(n - 2, 1)
+        ma, mb = phi[a].mean(0), phi[b].mean(0)
+        D = ((ma - mb) ** 2).sum(-1)
+        W = (((phi[a] - ma) ** 2).sum((0, 2)) + ((phi[b] - mb) ** 2).sum((0, 2))) / max(n - 2, 1)
         F.append(D / (W + s0))
     F = np.array(F)
-    obs_i = splits.index(tuple(range(n1)))
-    obs = F[obs_i]
-    null = np.sort(np.delete(F, obs_i, axis=0).ravel())
-    return (1 + null.size - np.searchsorted(null, obs, side="left")) / (1 + null.size)
+    pval = np.full(p.shape[1], np.nan)
+    if testable.any():
+        pval[testable] = pooled_permutation_p(F, obs_i, None if strata is None else np.asarray(strata)[testable])
+    return pval
 
 
 def shift_score_test(y: np.ndarray, ref: np.ndarray, alt: np.ndarray, centers: np.ndarray, smooth: int = 5,
-                     s0_quantile: float = 0.5) -> dict:
+                     s0_quantile: float = 0.5, strata: np.ndarray | None = None,
+                     blocks: np.ndarray | None = None) -> dict:
     """Directional per-region shift test: each sample's mass-normalised profile is projected on the
     derivative of the pooled (condition-blind, lightly smoothed) template, the locally most powerful
     direction for a small translation. The group difference of the projections is scaled by their
@@ -327,7 +417,9 @@ def shift_score_test(y: np.ndarray, ref: np.ndarray, alt: np.ndarray, centers: n
     g = np.gradient(Tm, float(np.median(np.diff(centers))), axis=-1)
     z = -((p - Tm) * g).sum(-1) / np.maximum((g * g).sum(-1), 1e-12)  # ≈ per-sample shift (bp), attenuated
     s0 = np.quantile(((z - z.mean(0)) ** 2).sum(0) / (n - 1), s0_quantile)
-    splits = [sp for sp in itertools.combinations(range(n), n1) if n1 != n - n1 or 0 in sp]
+    splits, obs_i = label_assignments(n1, n, None if blocks is None else np.asarray(blocks)[np.r_[ref, alt]])
+    if len(splits) < 2:
+        return dict(p=np.full(z.shape[1], np.nan), sign=np.sign(z[n1:].mean(0) - z[:n1].mean(0)))
     F = []
     for sp in splits:
         a = np.array(sp)
@@ -336,9 +428,7 @@ def shift_score_test(y: np.ndarray, ref: np.ndarray, alt: np.ndarray, centers: n
         W = (((z[a] - z[a].mean(0)) ** 2).sum(0) + ((z[b] - z[b].mean(0)) ** 2).sum(0)) / max(n - 2, 1)
         F.append(d * d / (W + s0))
     F = np.array(F)
-    obs_i = splits.index(tuple(range(n1)))
-    null = np.sort(np.delete(F, obs_i, axis=0).ravel())
-    pval = (1 + null.size - np.searchsorted(null, F[obs_i], side="left")) / (1 + null.size)
+    pval = pooled_permutation_p(F, obs_i, strata)
     return dict(p=pval, sign=np.sign(z[n1:].mean(0) - z[:n1].mean(0)))
 
 
@@ -499,24 +589,71 @@ def per_region_tests(a: Analysis, fdr: float = 0.05, shape_quantile: float = 0.0
     mask = (support_mask(y, KERNEL_SUPPORT_FRACTION) if KERNEL_SUPPORT_FRACTION is not None
             else np.ones(y.shape[1:], bool))
     n_assign = _n_assignments(len(ref), len(alt))
-    if len(sidx) >= 20 and n_assign >= 3:
-        p_kernel = kernel_shape_test(y, mask, ref, alt, KERNEL_SIGMA_BP, KERNEL_S0_QUANTILE, M.centers(e))
+    # Optional condition-blind shape classes on the pooled profiles (descriptive; not used by any test).
+    classes = None
+    if getattr(c, "shape_classes", False) and len(sidx) >= 60:
+        from .shapeclass import shape_classes
+        yp = np.clip(np.nan_to_num(y).mean(0), 0, None)
+        P = yp / np.maximum(yp.sum(-1, keepdims=True), 1e-12)
+        Q = max(1, int(round(c.align_max_shift / float(np.median(np.diff(e))))))
+        classes = shape_classes(P, Q, seed=c.seed)
+        notes.append(f"shape classes (condition-blind k-mean alignment, descriptive): k = {classes.k}, "
+                     f"simplified silhouette {classes.silhouette:.2f}")
+    # Processing batches from the manifest: permute labels within batches.
+    blocks = None
+    batches = [str(a.profiles.samples[i].get("batch", "") or "") for i in np.r_[a.ref_idx, a.alt_idx]]
+    if getattr(c, "batch_aware", True) and all(batches) and len(set(batches)) > 1:
+        b = np.array(batches)
+        n_block = len(label_assignments(len(ref), len(ref) + len(alt), b)[0])
+        if n_block < 2:
+            blocks = b  # only the observed assignment exists: the tests return NaN (not_tested)
+            notes.append("condition and batch coincide (no label assignment within batches exists): per-region shape "
+                         "tests are not performed; condition differences cannot be separated from batch")
+        elif getattr(c, "batch_permutation", "free") == "within":
+            blocks = b
+            n_assign = n_block
+            notes.append(f"labels permuted within batches ({len(set(batches))} batches; {n_block} assignments)")
+        else:
+            notes.append(f"batches recorded ({len(set(batches))}); design not confounded; labels permuted freely")
+    # With batches that coincide with the condition the tests return NaN: regions are reported as not_tested.
+    testable = len(sidx) >= 20 and (n_assign >= 2 or blocks is not None)
+    if testable:
+        p_kernel = kernel_shape_test(y, mask, ref, alt, KERNEL_SIGMA_BP, KERNEL_S0_QUANTILE, M.centers(e), blocks=blocks)
         tests["shape_kernel"] = _finish(dict(estimate=np.full(len(sidx), np.nan), p=p_kernel, d0=np.nan),
                                         sidx, fdr, omnibus=True)
         notes.append(f"shape_kernel: null pooled over {len(sidx)} regions × {n_assign - 1} non-observed label assignments"
                      + (" (few assignments: conservative)" if n_assign < 10 else ""))
     core = M.core_mask(a.profiles.edges, c.core_flank)
     cov = np.nan_to_num(a.values[:, sidx][..., core])
-    fit = template_fit(y, cov, e, smooth=TEMPLATE_SMOOTH)
-    tests["log2_scale"] = _finish(moderated_t(fit["log2_scale"], ref, alt), sidx, fdr)
-    if a.profiles.oriented and len(sidx) >= 20 and n_assign >= 3:
+    # Template fit: effect size of `shift`. Its width scale is not tested: a moderated t on it was
+    # miscalibrated under translations (null FWER 0.15–0.50 in the round-2 validation).
+    fit = template_fit(y, cov, e, smooth=SHIFT_FIT_SMOOTH, refine=SHIFT_FIT_REFINE)
+    if a.profiles.oriented and testable:
         # Calls from the projection score test (pooled permutation null); effect size from the template fit.
-        score = shift_score_test(y, ref, alt, M.centers(e), smooth=TEMPLATE_SMOOTH)
+        score = shift_score_test(y, ref, alt, M.centers(e), smooth=TEMPLATE_SMOOTH, blocks=blocks)
         est = fit["shift"][alt].mean(0) - fit["shift"][ref].mean(0)
         res = _finish(dict(estimate=score["sign"], p=score["p"], d0=np.nan), sidx, fdr)
         res["estimate"] = est
         res["direction"] = score["sign"]
         tests["shift"] = res
+    class_rows = []
+    if classes is not None:
+        # Summaries of the per-region calls within each class. A class-wide average of all regions'
+        # shifts is not reported: most regions do not move, so it is tiny yet "significant" (seen on
+        # real yeast MNase data); the direction balance and size among called regions are informative.
+        for j in range(classes.k):
+            m = classes.labels == j
+            row = dict(shape_class=j + 1, regions=int(m.sum()))
+            for name in ("shape_kernel", "shift"):
+                if name in tests:
+                    row[f"{name}_called"] = float(np.isin(tests[name]["call"][m], ("Higher", "Lower", "Changed")).mean())
+            if "shift" in tests:
+                calls, est = tests["shift"]["call"][m], np.asarray(tests["shift"]["estimate"])[m]
+                hi, lo = calls == "Higher", calls == "Lower"
+                row.update(shift_higher=int(hi.sum()), shift_lower=int(lo.sum()),
+                           shift_higher_share=float(hi.sum() / max(hi.sum() + lo.sum(), 1)),
+                           median_abs_shift_called_bp=float(np.median(np.abs(est[hi | lo]))) if (hi | lo).any() else float("nan"))
+            class_rows.append(row)
     # Full-window moments on regions with positive mass in every sample (moments are ratios). The
     # support-restricted versions were better on parametric shapes but miscalibrated on real noise
     # (benchmarks/profileseg_region_tuning.py), so they are not used for testing.
@@ -546,7 +683,9 @@ def per_region_tests(a: Analysis, fdr: float = 0.05, shape_quantile: float = 0.0
         influence = replicate_influence(y, cov, e, ref, alt, calls, fdr, a.profiles.oriented, names)
         notes.extend(influence["flags"])
     return RegionalResult(regions=comp, tests=tests, robust_global=robust, shape_regions=int(len(sidx)), notes=notes,
-                          strength_trend=trend, influence=influence)
+                          strength_trend=trend, influence=influence, classes=class_rows,
+                          class_templates=None if classes is None else classes.templates,
+                          class_labels=None if classes is None else classes.labels)
 
 
 def _n_assignments(n1: int, n2: int) -> int:

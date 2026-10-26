@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProfileSeg Evaluation</title>
+<style>
+:root { --bg:#ffffff; --fg:#1f2328; --muted:#59636e; --line:#d1d9e0; --head:#f6f8fa; --accent:#0969da; --code:#eff1f3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --head:#151b23; --accent:#4493f8; --code:#262c36; } }
+:root[data-theme="dark"] { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --head:#151b23; --accent:#4493f8; --code:#262c36; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 1.9rem; margin: 0 0 .4rem; }
+h2 { font-size: 1.35rem; margin: 2.2rem 0 .6rem; padding-bottom: .3rem; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 1.6rem 0 .5rem; }
+p, li { max-width: 72ch; }
+em { color: var(--muted); }
+code { background: var(--code); padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+a { color: var(--accent); }
+.table { overflow-x: auto; margin: .8rem 0 1.2rem; border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { background: var(--head); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td strong { color: var(--fg); }
+</style>
+</head>
+<body><main>
+<h1>ProfileSeg evaluation report</h1>
+<p><em>Status as of 2026-10-26, end of day (code: ProfileSeg v2.4, uncommitted working tree after commit <code>a6fa276</code>).
+All numbers come from the scripts in <code>benchmarks/</code> and are detailed in <code>docs/PROFILESEG_COMPARISON.md</code>.</em></p>
+<h2>1. Summary</h2>
+<p>ProfileSeg compares coverage profiles around predefined anchors between two conditions with
+biological replicates. It reports <strong>amplitude</strong> (how much signal) and <strong>shape</strong> (where and how
+spread the signal is) separately, for the typical region and for each region, and treats replicates
+— not regions or reads — as the unit of inference.</p>
+<p><strong>Main result.</strong> The per-region shape tests (<code>shape_kernel</code>, omnibus; <code>shift</code>, directional with an
+effect size in bp) are calibrated with as few as <strong>two replicates per condition</strong> on simulated,
+semi-real and real data, and they detect known changes in two real assays. On the same real BAMs,
+the closest existing tool (MMDiff2) made false calls in real nulls where ProfileSeg made none, and
+detected fewer genes in a known positive control.</p>
+<p><strong>Main limitations.</strong> Small per-site effects are information-limited (50 bp shifts at 2 vs 2);
+processing batches that coincide with the contrast are detected as differences; the <code>shift</code> effect
+size is attenuated by up to ~27 % at 2 vs 2 on broad profiles; the aggregate (typical-region)
+analysis is reliable only under stated conditions. Evidence for some application areas (TF
+redistribution, cut sites, histone spreading) is simulation-only.</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>aspect</th>
+<th>assessment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>statistical design</td>
+<td>replicate-level inference; amplitude/shape separated by construction; pooled permutation null over regions and label assignments with a label-invariant stabiliser</td>
+</tr>
+<tr>
+<td>calibration evidence</td>
+<td>strong for per-region tests: frozen validations (final round passes every criterion), real nulls in 3 assays (yeast MNase 2v2, PRO-seq 3v3, single-line CUT&amp;RUN 3v3), insertion on real replicates</td>
+</tr>
+<tr>
+<td>power</td>
+<td>high for shifts ≥ 50 bp at 3 vs 3 and ≥ 20 bp for coherent shifts (PRO-seq); low for 50 bp at 2 vs 2 and for partial broadening</td>
+</tr>
+<tr>
+<td>robustness</td>
+<td>single-replicate artefacts absorbed and flagged; batch structure aligned with the contrast is detected (correctly, but it must be designed out)</td>
+</tr>
+<tr>
+<td>practicality</td>
+<td>bigWig / computeMatrix input; seconds for 5,000 regions; ~100× faster and ~20× less memory than MMDiff2</td>
+</tr>
+<tr>
+<td>maturity</td>
+<td>beta; embedded in GenomeCanvas; single developer; not yet packaged separately</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. Method in brief</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>component</th>
+<th>what it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>background correction</td>
+<td>per sample and region, mean of the outer flanks</td>
+</tr>
+<tr>
+<td>amplitude (per region)</td>
+<td><code>log2_signal</code>, <code>log2_signal_relative</code> (relative to the bulk of regions, half-sample-mode offsets), <code>log2_enrichment</code>; limma-identical moderated t, BH</td>
+</tr>
+<tr>
+<td><code>shape_kernel</code></td>
+<td>Gaussian-kernel (MMD-type) distance between condition-mean mass-normalised profiles, divided by within-condition spread + s0; null pooled over regions × non-observed label assignments</td>
+</tr>
+<tr>
+<td><code>shift</code></td>
+<td>projection of each sample's profile on the derivative of the pooled template (locally most powerful for small translations), same pooled null; effect size in bp from a weighted Gauss–Newton template fit</td>
+</tr>
+<tr>
+<td>label-invariant s0</td>
+<td>s0 from the total spread, identical under every assignment (a per-assignment s0 made the test anti-conservative; found and fixed during development)</td>
+</tr>
+<tr>
+<td>diagnostics</td>
+<td>background ratio, amplitude re-weighting, replicate-wide offsets relative to the group, leave-one-replicate-out retention (≥ 3 per group)</td>
+</tr>
+<tr>
+<td>options</td>
+<td>condition-blind anchor alignment (FunChIP-style shift-only k-mean alignment), descriptive shape classes</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. Evidence</h2>
+<h3>3.1 Simulation and semi-real data (frozen validations)</h3>
+<p>Criteria fixed before running: V1 null FWER ≤ 0.10; V2 false-call share ≤ 0.005 in no-shape
+scenarios; V3 FDP ≤ 0.10 in 20 % mixtures; V4 shift estimate within ±20 %.</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>round</th>
+<th>seeds</th>
+<th>what changed</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2</td>
+<td>700 000+</td>
+<td>shift score test</td>
+<td>V1–V3 pass; V4 fails (real templates 2v2)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>2 500 000+</td>
+<td>batch handling, refined shift estimator</td>
+<td>all pass</td>
+</tr>
+<tr>
+<td>5</td>
+<td>3 000 000+</td>
+<td>kernel: whole-window signed normalisation</td>
+<td>calibrated, but kernel power collapsed on broad profiles (rejected)</td>
+</tr>
+<tr>
+<td><strong>6 (final)</strong></td>
+<td>3 500 000+</td>
+<td>kernel: signed profile / support mass</td>
+<td><strong>all criteria pass in all 6 cells</strong>; zero false calls under amplitude-only changes</td>
+</tr>
+</tbody>
+</table></div>
+<p>Final per-region power (round 6), kernel / shift at 100 bp: 0.52–0.91 / 0.56–0.97; shift at 50 bp
+0.01–0.47; <code>shift</code> estimate 84.5–99.9 bp for a 100 bp truth.</p>
+<p>Global validation (round 4, revised criteria): per-region shape tests pass in all six designs;
+aggregate width metrics fail A2/A3 under amplitude changes in some designs (re-weighting confound),
+and per-region <em>absolute</em> amplitude fails R2 in three designs (§4).</p>
+<h3>3.2 Real data</h3>
+<div class="table"><table>
+<thead>
+<tr>
+<th>dataset</th>
+<th>design</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>yeast MNase, WT replicate splits (GSE280671)</td>
+<td>2 vs 2, 3 splits</td>
+<td>0 calls (both tests)</td>
+</tr>
+<tr>
+<td>yeast MNase, 18 replicate splits over 6 genotypes</td>
+<td>2 vs 2</td>
+<td><code>shift</code>: 0 calls in all; <code>shape_kernel</code>: 0 in 15; calls (5–18 % of regions) only in "replicates 1+2 vs 3+4" splits of three genotypes whose replicate pairs differ systematically (cross-pair / within-pair distance 1.5–2.7)</td>
+</tr>
+<tr>
+<td>human PRO-seq DMSO, line-balanced (GSE233930)</td>
+<td>3 vs 3, 4 splits</td>
+<td>0 calls (both tests)</td>
+</tr>
+<tr>
+<td>insertion on real replicates (20 % of regions)</td>
+<td>yeast 2 vs 2, PRO-seq 3 vs 3</td>
+<td>FDP 0.03–0.05 (yeast, batch-aligned splits excluded; 0.12 with them), &lt; 0.02 (PRO-seq); <code>shift</code> 20 bp power 0.97–1.00; <code>shape_kernel</code> 100 bp 0.99–1.00</td>
+</tr>
+<tr>
+<td>yeast isw1Δ chd1Δ vs WT</td>
+<td>4 vs 4</td>
+<td>91 % of genes change shape; ordering of mutants agrees with an independent phasing measure (WT 0.97, singles 0.89–0.94, double 0.40–0.67)</td>
+</tr>
+<tr>
+<td>human PRO-seq, NELFB degradation</td>
+<td>2 vs 2</td>
+<td>6,350 genes shifted, 98 % downstream, +17.5 bp (independent meta-profile ~+18 bp)</td>
+</tr>
+<tr>
+<td>yeast MNase, same real BAMs, vs MMDiff2</td>
+<td>2 vs 2, 134–141 genes</td>
+<td>nulls: ProfileSeg 0 and 0, MMDiff2 33 and 20 (of 300); positive: ProfileSeg 90 of 141</td>
+</tr>
+<tr>
+<td>TF CUT&amp;RUN, single cell line (GSE291134)</td>
+<td>3 vs 3, 2 lines × 10 splits</td>
+<td>per-region and aggregate: 0 calls (one split 0.14 %); but ~4–20 fragments per site: no power, MMDiff2 crashed — the second real-BAM comparison is inconclusive</td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.3 Conventional practice on real data</h3>
+<div class="table"><table>
+<thead>
+<tr>
+<th>practice</th>
+<th>behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wilcoxon over regions (regions as units)</td>
+<td>significant in 78 % (yeast) and 100 % (PRO-seq) of real null splits</td>
+</tr>
+<tr>
+<td>Welch t on window centroids</td>
+<td>no power on MNase arrays; low on PRO-seq</td>
+</tr>
+<tr>
+<td>moderated t on window centroids (ProfileSeg v2)</td>
+<td>FWER 0.25 on PRO-seq nulls</td>
+</tr>
+<tr>
+<td>pausing index (moderated t)</td>
+<td>FWER 0.75 on PRO-seq nulls; ≤ 0.27 power for shifts</td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.4 Runtime and memory</h3>
+<p>Default pipeline (current code, single thread): 2.8–7.9 s for 5,000 regions (2v2–4v4), 11–36 s for
+20,000. Peak memory 0.8–1.5 GB (5,000 regions) and 2.7–3.6 GB (20,000). An exact kernel feature map
+made the default pipeline 19× faster at 20,000 regions (4 vs 4). MMDiff2 on simulated BAMs: 418 s /
+7.8 GB (300 regions), 912 s / 6.6 GB (1,000 regions).</p>
+<h2>4. Overall assessment</h2>
+<p><strong>Strengths</strong></p>
+<ol>
+<li>Addresses a real gap: replicate-level, per-region shape inference that is separated from
+   amplitude, on coverage tracks, at 2–3 replicates.</li>
+<li>Calibration is supported by pre-specified criteria on fresh seeds, real nulls in two assays and
+   insertion on real replicates — more than most published tools in this area.</li>
+<li>Explains why existing approaches fail (Fisher combination of dependent p-values in MMDiff2;
+   pseudo-replication in region-as-unit tests; amplitude–position mixing in pausing indices) and
+   shows it on real data.</li>
+<li>Interpretable outputs (bp, log2), diagnostics, low resource use.</li>
+</ol>
+<p><strong>Weaknesses and threats to validity</strong></p>
+<ol>
+<li>Simulation-based tuning shares a generative family with the simulation validations (mitigated,
+   not eliminated, by semi-real and real-data checks).</li>
+<li>Development history includes an amended selection rule and two fixed defects (per-assignment s0;
+   dependent semi-real noise) before the final validations.</li>
+<li>Batch structure aligned with the contrast produces calls; only balanced designs (or batch-aware
+   assignments, in progress) avoid this.</li>
+<li>Information limits for small per-site effects at 2 replicates.</li>
+<li>Effect-size attenuation of <code>shift</code> at 2 vs 2 on broad profiles.</li>
+<li>Aggregate analysis: earlier validation failures, low power at 2 vs 2, unstable on periodic
+   profiles; positioned as descriptive with explicit conditions of use.</li>
+<li>Real-BAM comparison so far in one assay and at subsampled depth; MMDiff2 had to run in
+   single-end mode (its paired-end mode fails in 1.30.0).</li>
+</ol>
+<p><strong>Readiness.</strong> Suitable for internal use and for reporting per-region shape changes with the
+caveats above. For publication in a mid-tier methods journal: about 85 % ready for a paper centred on
+the per-region shape tests; the open items are listed in §7.</p>
+<h2>5. Application scenarios</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>scenario</th>
+<th>anchors</th>
+<th>question answered</th>
+<th>evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>chromatin remodelling (MNase-seq, ATAC)</td>
+<td>ATG/TSS (oriented), dyads</td>
+<td>which genes' nucleosome arrays shift or lose phasing; occupancy separately</td>
+<td>real data (yeast)</td>
+</tr>
+<tr>
+<td>transcription pausing (PRO-seq, PRO-cap, Pol II ChIP)</td>
+<td>TSS, strand-matched</td>
+<td>pause-site shift in bp; release vs amount</td>
+<td>real data (human)</td>
+</tr>
+<tr>
+<td>TF mutants, cofactor loss (ChIP, CUT&amp;RUN)</td>
+<td>summits, motifs, dyads</td>
+<td>binding lost vs moved (e.g. toward NFR)</td>
+<td>simulation, semi-real</td>
+</tr>
+<tr>
+<td>DNA damage / cut sites</td>
+<td>cut sites</td>
+<td>signal level vs spread around breaks</td>
+<td>simulation</td>
+</tr>
+<tr>
+<td>histone marks at TSS/enhancers</td>
+<td>TSS, enhancers</td>
+<td>domain spreading vs level change (local domains only)</td>
+<td>simulation</td>
+</tr>
+<tr>
+<td>construct / antibody comparisons</td>
+<td>binding sites</td>
+<td>amplitude, background or shape</td>
+<td>simulation</td>
+</tr>
+</tbody>
+</table></div>
+<p>Design guidance: 1 replicate — descriptive only; 2 — per-region shifts ≥ ~20 bp when coherent,
+≥ 100 bp in general; 3 — most effects of interest; ≥ 4 — small per-site effects. Balance processing
+batches across conditions. Use spike-ins for absolute amplitude claims.</p>
+<p>Not suited to: anchor-free discovery; very broad domains; ratio-of-assays questions (Ribo-seq TE);
+absolute global changes without spike-ins.</p>
+<h2>6. Comparison with existing tools</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>tool</th>
+<th>question</th>
+<th>replicates as unit</th>
+<th>amplitude vs shape</th>
+<th>per-region shape</th>
+<th>effect sizes</th>
+<th>2 vs 2</th>
+<th>evidence here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ProfileSeg</strong></td>
+<td>amplitude + shape, aggregate and per region</td>
+<td>yes</td>
+<td>separated</td>
+<td>yes</td>
+<td>bp, log2</td>
+<td>yes</td>
+<td>simulation, semi-real, real nulls, insertion, real positives, real BAMs</td>
+</tr>
+<tr>
+<td>MMDiff2</td>
+<td>read-distribution difference per peak</td>
+<td>null from replicate pairs</td>
+<td>not separated</td>
+<td>omnibus</td>
+<td>no</td>
+<td>partly</td>
+<td>anti-conservative (simulation 34 %; real nulls 5–13 %); fewer real positives; paired-end mode broken; slow</td>
+</tr>
+<tr>
+<td>IWTomics</td>
+<td>where two <strong>region sets</strong> differ along a window</td>
+<td>no</td>
+<td>not separated</td>
+<td>no</td>
+<td>no</td>
+<td>no</td>
+<td>100 % calls under amplitude-only changes (regions as units)</td>
+</tr>
+<tr>
+<td>DANPOS / Nucleosome Dynamics</td>
+<td>per-nucleosome changes genome-wide</td>
+<td>not replicate-level inference, as far as we know</td>
+<td>separated</td>
+<td>per nucleosome</td>
+<td>yes</td>
+<td>—</td>
+<td>not run</td>
+</tr>
+<tr>
+<td>DiffBind / csaw / edgeR</td>
+<td>count differences</td>
+<td>yes</td>
+<td>amplitude only</td>
+<td>no</td>
+<td>log2FC</td>
+<td>yes</td>
+<td>edgeR as powerful as ProfileSeg's relative amplitude</td>
+</tr>
+<tr>
+<td>conventional practice (Wilcoxon over regions, window centroids, pausing index)</td>
+<td>various</td>
+<td>no / partly</td>
+<td>mixed</td>
+<td>no</td>
+<td>—</td>
+<td>—</td>
+<td>miscalibrated or underpowered on real data (§3.3)</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. Gaps: closed and open</h2>
+<p>Closed in this round: batch-aware label assignments (confounded designs refused; optional
+within-batch permutation); <code>shift</code> attenuation (V4 passes everywhere); a single-cell-line 3 vs 3 real
+null (CUT&amp;RUN, 20 splits); kernel bias under amplitude changes (found by validation, fixed); a
+miscalibrated exploratory test (<code>log2_scale</code>) removed; 19× faster pipeline.</p>
+<p>Open:
+1. Aggregate width metrics under amplitude heterogeneity (A2/A3) and per-region absolute amplitude
+   in some designs.
+2. A second real-BAM comparison with adequate depth (the CUT&amp;RUN data were too sparse).
+3. Batch information for public data (inferred here, not recorded in GEO).
+4. Stand-alone packaging.</p>
+</main></body>
+</html>

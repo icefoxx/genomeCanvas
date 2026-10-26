@@ -44,6 +44,10 @@ SCENARIOS = ("null", "amplitude", "other_amplitude", "mix_shift", "mix_shift50",
 CRIT = dict(V1=0.10, V2=0.005, V3=0.10, V4=0.20)
 FRACTION = 0.2
 # Round 1 (v2.1): 300 000. Round 2 (v2.2: shift_score calls, Helmert semi-real noise): 700 000.
+# Round 3 (opt-in alignment, --variant align --seed-base 1700000).
+# Round 4 (batch handling, shift estimator refinement, exact kernel feature map): --seed-base 2500000.
+# Round 5 (signed kernel normalisation, log2_scale test removed): --seed-base 3000000.
+# Round 6 (kernel: signed profile / support mass): --seed-base 3500000.
 SEED_BASE = 700_000
 _SEMI = {}
 
@@ -83,14 +87,23 @@ def make(source, n, scenario, seed, templates_path, cache) -> tuple[Profiles, np
     return _mix(a, b, k, 300), np.r_[np.ones(k, bool), np.zeros(300 - k, bool)], shift
 
 
+# The "strata" variant (seeds 1 800 000) was validated with code that has since been removed; see
+# docs/PROFILESEG_COMPARISON.md §7.
+VARIANT = {"default": {}, "align": dict(align_anchors=True)}
+
+
 def run(job):
-    source, n, scenario, rep, templates_path, cache = job
-    seed = SEED_BASE + 10_000 * SOURCES.index(source) + 1000 * SCENARIOS.index(scenario) + 100 * n + rep
+    source, n, scenario, rep, templates_path, cache, variant, seed_base = job
+    seed = seed_base + 10_000 * SOURCES.index(source) + 1000 * SCENARIOS.index(scenario) + 100 * n + rep
     prof, changed, shift = make(source, n, scenario, seed, templates_path, cache)
-    a = analyse(prof, Config(reference="WT", alternative="KO"), bootstrap=0)
+    cfg = Config(reference="WT", alternative="KO", **VARIANT[variant])
+    if cfg.align_anchors:
+        from genomecanvas.profileseg.shapeclass import align_profiles
+        prof, _, _ = align_profiles(prof, cfg.background_width, cfg.core_flank, cfg.align_max_shift, seed=cfg.seed)
+    a = analyse(prof, cfg, bootstrap=0)
     reg = per_region_tests(a)
     out = {}
-    for m in ("shape_kernel", "shift", "centroid", "mad_width", "log2_scale"):
+    for m in ("shape_kernel", "shift", "centroid", "mad_width"):
         if m not in reg.tests:
             continue
         t = reg.tests[m]
@@ -113,18 +126,20 @@ def main(argv=None) -> int:
     ap.add_argument("--semireal", required=True)
     ap.add_argument("--reps", type=int, default=20)
     ap.add_argument("--jobs", type=int, default=6)
+    ap.add_argument("--variant", choices=sorted(VARIANT), default="default")
+    ap.add_argument("--seed-base", type=int, default=SEED_BASE)
     args = ap.parse_args(argv)
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
     sha = source_hash()
-    jobs = [(s, n, sc, r, args.templates, args.semireal) for s in SOURCES for n in DESIGNS for sc in SCENARIOS
-            for r in range(args.reps)]
+    jobs = [(s, n, sc, r, args.templates, args.semireal, args.variant, args.seed_base) for s in SOURCES for n in DESIGNS
+            for sc in SCENARIOS for r in range(args.reps)]
     agg = {}
     with ProcessPoolExecutor(max_workers=args.jobs) as pool:
         for s, n, sc, res in pool.map(run, jobs):
             for m, v in res.items():
                 agg.setdefault((s, n), {}).setdefault(sc, {}).setdefault(m, []).append(v)
     mean = lambda rows, k: float(np.nanmean([r[k] for r in rows]))
-    lines = [f"# Per-region shape validation", "", f"Source hash `{sha}`; {args.reps} runs per cell; seeds {SEED_BASE}+.",
+    lines = [f"# Per-region shape validation", "", f"Variant `{args.variant}`; source hash `{sha}`; {args.reps} runs per cell; seeds {args.seed_base}+.",
              "", "| source | design | V1 null FWER (kernel) | V2 max false share (kernel / shift) | V3 mean FDP (kernel / shift) | "
              "V4 shift estimate (100 bp) | pass | power kernel: shift100 / shift50 / broaden | power shift: 100 / 50 |",
              "|---|---|---|---|---|---|---|---|---|"]

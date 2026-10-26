@@ -226,7 +226,7 @@ def benchmark_figure(summary: list[dict], out: Path, dpi: int = 300) -> list[Pat
 def regional_figure(a, regional, out: Path) -> list[Path]:
     """G: per-region volcano plots (moderated t) for the main amplitude and shape metrics."""
     out.mkdir(parents=True, exist_ok=True)
-    names = [n for n in ("log2_signal_relative", "log2_enrichment", "shift", "log2_scale") if n in regional.tests]
+    names = [n for n in ("log2_signal_relative", "log2_enrichment", "shift") if n in regional.tests]
     with plt.rc_context({**RC, "font.family": [a.config.font, "DejaVu Sans"]}):
         fig, axes = plt.subplots(1, len(names), figsize=(3.0 * len(names), 2.8), squeeze=False, layout="constrained")
         for ax, name in zip(axes[0], names, strict=True):

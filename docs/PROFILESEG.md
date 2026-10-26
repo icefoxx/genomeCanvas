@@ -131,11 +131,19 @@ BH FDR per metric (`inference.region_fdr`, default 0.05).
 | `log2_enrichment` | centre signal / own background |
 | `shape_kernel` | **main per-region shape test (v2.1)**: kernel distance between condition-mean profiles, null pooled over regions and replicate-label assignments; Changed / Not_significant, no direction. Works for 2 vs 2 |
 | `shift` | per-region shift (bp) from a template fit (oriented anchors): the effect size for position changes. Attenuated by ~10–28 % in validation; do not use for calling at 2 vs 2 on broad profiles |
-| `log2_scale` | per-region width scale from the template fit; exploratory |
 | `centroid` | per-region centre of mass (oriented anchors); low power on broad profiles |
 | `mad_width` | per-region spread (mean absolute deviation); **low power, exploratory** |
 
 Shape tests use every region with positive pooled background-corrected signal (condition-blind).
+**Options (off by default):** `shape.align_anchors` re-centres each region on a condition-blind class template
+(FunChIP-style shift-only k-mean alignment of the pooled profile; same shift for every sample) and
+`shape.classes` adds a descriptive table of condition-blind shape classes. Neither changes the per-region tests'
+calibration (frozen validation, `docs/PROFILESEG_COMPARISON.md` §7).
+**Batches:** fill the manifest `batch` column. If condition and batch coincide, per-region shape tests are not
+performed (they cannot separate condition from batch); balanced designs use free label permutation by default,
+or permutation within batches with `inference.batch_permutation: within` (more power, FDP ~0.06 on real yeast data).
+**Depth:** per-region shape tests need enough fragments per region and sample (hundreds worked on yeast MNase;
+~10 per site on a TF CUT&RUN dataset gave no power).
 **Replicate diagnostics:** each replicate's sample-wide shift and width offset relative to its own group
 (flags a deviant replicate or pair), and, with ≥ 3 replicates per group, the share of shape calls that
 survive leaving each replicate out. Real-data checks (yeast MNase nulls and remodeler mutants; human PRO-seq
@@ -160,6 +168,36 @@ replicates. Unaffected by re-weighting; when it disagrees with the aggregate wid
 Outputs: `reports/05_regional.md`, `results/metrics/region_tests.tsv` (region × metric: estimate,
 moderated t, df, p, FDR, call), `region_tests_summary.tsv`, `robust_global_shape.tsv`,
 `figures/G_region_volcano.*`.
+
+## When to use the aggregate centroid (and when not)
+
+The aggregate `centroid` (and `iqr_width` / `sd_width`) describes the **typical region**: one number
+per replicate, Welch across replicates. It is the right summary only under the conditions below;
+otherwise use the per-region `shift` / `shape_kernel` calls (and `median_region_centroid`).
+
+| condition | why | evidence |
+|---|---|---|
+| **oriented anchors** (TSS/ATG with strand, oriented motifs) | without orientation a centroid change has no direction and averages to ~0 | design |
+| **one localised feature in the core window** (Pol II pause peak, an oriented footprint, +1 nucleosome) — set `shape.core_flank` to cover just that feature | periodic arrays or several features make window moments unstable | yeast MNase, full ±1 kb arrays: aggregate centroid −43.6 bp unaligned vs +23.1 bp aligned, never significant, although 91 % of genes changed per region |
+| **the change is shared by most regions** | a shift in a subset is diluted (20 % of regions shifted by 100 bp moves the aggregate by ~20 bp) | simulation |
+| **≥ 3 replicates per group** | with 2 the Welch interval has 1–2 df and is very wide | PRO-seq NELF, 2 vs 2: aggregate +18.8 bp (correct size) but "no clear change"; per-region `shift` called 6,350 genes, 98 % downstream |
+| **no re-weighting flag, and `median_region_centroid` agrees** | regions changing amplitude unequally move the aggregate with no region moving | simulation (re-weighting scenarios); the report flags disagreement |
+| **stable background** (no background-ratio flag) | background changes alter background-corrected weights | diagnostics |
+| **precise anchors**, or `shape.align_anchors: true` for summits / motifs | anchor scatter blurs the aggregate profile | tuning: with ±100 bp anchor error, alignment removed aggregate false calls under the null (10 % → 0 in four cells) and raised power in some cells |
+| **homogeneous region set** (`shape.classes: true` shows one dominant class), or analyse classes separately | mixing shapes mixes centroids | design |
+
+Typical choices:
+
+* PRO-seq / Pol II pausing, ≥ 3 replicates, `core_flank` ≈ 300 bp: aggregate centroid is a good
+  primary shape metric (pause shift of the typical gene); confirm with per-region `shift`.
+* TF ChIP at oriented motifs, ≥ 3 replicates: aggregate centroid for "binding moved toward X";
+  `align_anchors` if summits are imprecise.
+* MNase arrays, ATAC, broad marks, unoriented peaks, or 2 replicates: rely on per-region
+  `shape_kernel` / `shift` and `median_region_centroid`; treat the aggregate centroid as descriptive.
+
+Power reference (simulation, 300 regions): a 25 bp shift of every region is detected in 100 % of
+runs with 3 replicates and ~75 % with 2 (parametric shapes); on broad real templates a 50 bp shift
+reaches 0.6–0.8 with 3 replicates and 0.1–0.3 with 2.
 
 ## Outputs
 

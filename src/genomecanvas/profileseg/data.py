@@ -56,6 +56,21 @@ class Config:
     # shrunk_sample (default): per-sample bounded scaling (mass + sample median); shrunk: pooled
     # across samples; equal: pooled mass only; signal: no per-region scaling.
     region_weighting: str = "shrunk_sample"
+    # Condition-blind shape classes (shift-only k-mean alignment of pooled profiles, after FunChIP):
+    # an optional descriptive table of which kinds of profiles change. Classes do not enter any test
+    # (stratifying the pooled nulls by class was evaluated and rejected: no calibration gain, less power).
+    shape_classes: bool = False
+    # Re-centre each region on its class template before all analyses (corrects anchor misplacement;
+    # the shift comes from the pooled profile and is applied to every sample alike). Off by default;
+    # recommended for imprecise anchors (summits, motifs) and aggregate statements.
+    align_anchors: bool = False
+    # Manifest `batch` column (when filled for every sample). batch_aware: refuse per-region shape tests
+    # when condition and batch coincide (no assignment within batches exists). batch_permutation:
+    # "free" (default) keeps all label assignments for balanced designs; "within" permutes labels only
+    # within batches (more power for balanced designs, FDP ~0.07 vs ~0.03 on real yeast data).
+    batch_aware: bool = True
+    batch_permutation: str = "free"
+    align_max_shift: int = 150
     center_half: int = 250
     primary_amplitude: str = "log2_auc"
     primary_shape: str = "auto"  # auto: centroid for oriented anchors, iqr_width otherwise
@@ -105,6 +120,11 @@ _ALIASES = {
     "shape.max_truncated_fraction": "max_truncated_fraction",
     "shape.min_mass_quantile": "min_mass_quantile",
     "shape.region_weighting": "region_weighting",
+    "shape.classes": "shape_classes",
+    "shape.align_anchors": "align_anchors",
+    "shape.align_max_shift": "align_max_shift",
+    "inference.batch_aware": "batch_aware",
+    "inference.batch_permutation": "batch_permutation",
     "amplitude.center_half": "center_half",
     "inference.primary_amplitude": "primary_amplitude", "inference.primary_shape": "primary_shape",
     "inference.bootstrap": "bootstrap", "inference.region_fdr": "region_fdr",
@@ -127,6 +147,10 @@ def validate_config(c: Config) -> None:
         raise ValueError("primary_shape must be auto, centroid, sd_width, iqr_width or asymmetry")
     if c.region_weighting not in ("shrunk", "shrunk_sample", "equal", "signal"):
         raise ValueError("region_weighting must be shrunk, shrunk_sample, equal or signal")
+    if not 0 < c.align_max_shift < c.core_flank:
+        raise ValueError("shape.align_max_shift must be positive and smaller than core_flank")
+    if c.batch_permutation not in ("free", "within"):
+        raise ValueError("inference.batch_permutation must be free or within")
     if c.bootstrap < 10:
         raise ValueError("inference.bootstrap must be at least 10 (bootstrap intervals are reported for every metric)")
     if c.background_estimator not in ("mean", "median"):

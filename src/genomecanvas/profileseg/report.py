@@ -67,7 +67,16 @@ def run(config: Config, output: str | Path | None = None) -> dict:
     profiles, manifest_flags, samples = load_inputs(config)
     shutil.copy(config.path(config.manifest), out / "metadata" / "sample_manifest.tsv")
     profiles.save(out / "results" / "profiles.npz")
+    if config.align_anchors:
+        from .shapeclass import align_profiles
+        profiles, anchor_shift, _ = align_profiles(profiles, config.background_width, config.core_flank,
+                                                   config.align_max_shift, seed=config.seed,
+                                                   estimator=config.background_estimator)
     a = analyse(profiles, config)
+    if config.align_anchors:
+        moved = anchor_shift != 0
+        a.flags.append(f"anchors re-centred on condition-blind shape templates (max ±{config.align_max_shift} bp): "
+                       f"{int(moved.sum())} regions moved, median |shift| {np.median(np.abs(anchor_shift[moved])) if moved.any() else 0:.0f} bp")
     from .figures import regional_figure
     from .regional import per_region_tests
 
@@ -410,6 +419,18 @@ def write_regional(a: Analysis, regional, out: Path) -> None:
               "position change in bp. `centroid` / `mad_width` (full-window moments) are kept for continuity and have low "
               "power on broad profiles.", ""]
     lines += [f"* {n}" for n in regional.notes]
+    if regional.classes:
+        lines += ["", "## Shape classes (condition-blind, descriptive)", "",
+                  "Classes from a shift-only k-mean alignment of the pooled profiles (all samples, labels unused). "
+                  "They do not enter any test. Per class: share of regions called, and among shift calls the "
+                  "direction balance and the median |shift|.", "",
+                  "| class | regions | shape_kernel called | shift called | higher / lower | higher share | median |shift| of calls (bp) |",
+                  "|---|---|---|---|---|---|---|"]
+        for r in regional.classes:
+            lines.append(f"| {r['shape_class']} | {r['regions']} | {r.get('shape_kernel_called', float('nan')):.2f} | "
+                         f"{r.get('shift_called', float('nan')):.2f} | {r.get('shift_higher', '—')} / {r.get('shift_lower', '—')} | "
+                         f"{r.get('shift_higher_share', float('nan')):.2f} | {r.get('median_abs_shift_called_bp', float('nan')):.3g} |")
+        _tsv(m / "shape_classes.tsv", regional.classes)
     lines += ["", "## Reading the amplitude tests", "",
               "* `log2_auc` (window AUC) and `log2_signal` (background-corrected core signal) are absolute and inherit "
               "upstream normalisation: a global change in IP efficiency makes most regions 'Lower' or 'Higher'.",

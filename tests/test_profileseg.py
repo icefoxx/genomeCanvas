@@ -371,3 +371,102 @@ def test_kernel_shape_test_two_vs_two_and_amplitude_only():
             assert changed > 0.5
         else:
             assert changed < 0.01
+
+
+def test_shape_classes_are_condition_blind_and_alignment_recovers_anchor_error():
+    from genomecanvas.profileseg.data import Profiles
+    from genomecanvas.profileseg.shapeclass import align_profiles, pooled_core, shape_classes
+
+    prof, _ = simulate("null", SimSettings(n_regions=400), seed=5)
+    rng = np.random.default_rng(2)
+    jit = rng.integers(-5, 6, 400)
+    v = prof.values.copy()
+    for r, q in enumerate(jit):
+        v[:, r] = np.roll(v[:, r], q, axis=-1)
+    prof = Profiles(v, prof.edges, prof.samples, prof.regions, prof.oriented)
+    P, ok = pooled_core(prof.values, prof.edges, 500, 1000)
+    sc = shape_classes(P[ok], 8)
+    assert np.corrcoef(sc.shift_bins, -jit[ok])[0, 1] > 0.8
+    # relabelling the samples does not change the pooled profiles, hence classes and shifts
+    swapped = Profiles(v[::-1], prof.edges, prof.samples, prof.regions, prof.oriented)
+    P2, _ = pooled_core(swapped.values, swapped.edges, 500, 1000)
+    assert np.allclose(P, P2)
+    aligned, shift_bp, _ = align_profiles(prof, 500, 1000, 100.0)
+    assert np.all(np.abs(shift_bp) <= 100.0) and aligned.values.shape == prof.values.shape
+
+
+def test_stratified_pooled_permutation_p_is_uniform_under_exchangeability():
+    from genomecanvas.profileseg.regional import pooled_permutation_p
+
+    rng = np.random.default_rng(0)
+    # two strata with different null scales; rows are exchangeable within each region
+    F = np.concatenate([rng.exponential(1.0, (10, 500)), rng.exponential(5.0, (10, 500))], axis=1)
+    strata = np.r_[np.zeros(500, int), np.ones(500, int)]
+    p = pooled_permutation_p(F, 0, strata)
+    assert abs(np.mean(p < 0.05) - 0.05) < 0.02
+    assert abs(np.mean(p[strata == 1] < 0.05) - 0.05) < 0.03  # without strata this stratum would be liberal
+    p_global = pooled_permutation_p(F, 0, None)
+    assert np.mean(p_global[strata == 1] < 0.05) > 0.075
+
+
+def test_shape_class_summaries_are_descriptive_and_optional():
+    profiles, _ = simulate("shift", SimSettings(n_regions=300), seed=8)
+    off = per_region_tests(analyse(profiles, Config(reference="WT", alternative="KO", bootstrap=10)))
+    on = per_region_tests(analyse(profiles, Config(reference="WT", alternative="KO", bootstrap=10, shape_classes=True)))
+    assert off.classes == []
+    assert on.classes and all("median_abs_shift_called_bp" in r for r in on.classes)
+    # classes never change the tests
+    assert np.array_equal(off.tests["shape_kernel"]["p"], on.tests["shape_kernel"]["p"])
+    assert np.array_equal(off.tests["shift"]["p"], on.tests["shift"]["p"])
+
+
+def test_kernel_feature_map_matches_explicit_kernel_quadratic_forms():
+    """kernel_shape_test uses φ = pL with K = LLᵀ; the statistics must equal the explicit xᵀKx forms."""
+    import itertools
+
+    from genomecanvas.profileseg.regional import kernel_shape_test, pooled_permutation_p, support_mask
+
+    rng = np.random.default_rng(4)
+    y = rng.gamma(2.0, 1.0, (6, 200, 40))
+    c = np.arange(40) * 20.0
+    ref, alt = np.arange(3), np.arange(3, 6)
+    p = y / (y * support_mask(y, 0.2)[None]).sum(-1, keepdims=True)  # same normalisation as the test
+    K = np.exp(-0.5 * ((c[:, None] - c[None]) / 60.0) ** 2)
+    dev = p - p.mean(0)
+    s0 = np.quantile(np.einsum("srb,bc,src->r", dev, K, dev) / 5, 0.5)
+    splits = [s for s in itertools.combinations(range(6), 3) if 0 in s]
+    F = []
+    for s in splits:
+        a = np.array(s); b = np.setdiff1d(np.arange(6), a)
+        d = p[a].mean(0) - p[b].mean(0)
+        res = np.concatenate([p[a] - p[a].mean(0), p[b] - p[b].mean(0)])
+        F.append(np.einsum("rb,bc,rc->r", d, K, d) / (np.einsum("srb,bc,src->r", res, K, res) / 4 + s0))
+    expected = pooled_permutation_p(np.array(F), 0)
+    got = kernel_shape_test(y, np.ones((200, 40), bool), ref, alt, 60.0, 0.5, c)
+    assert np.allclose(got, expected)
+
+
+def test_batch_confounded_design_is_not_tested_and_within_batch_assignments():
+    from genomecanvas.profileseg.regional import label_assignments
+
+    # 2 vs 2 with one replicate of each condition per batch: two distinct assignments within batches
+    splits, obs = label_assignments(2, 4, np.array(["b1", "b2", "b1", "b2"]))
+    assert len(splits) == 2 and splits[obs] == (0, 1)
+    # condition = batch: only the observed assignment
+    assert len(label_assignments(2, 4, np.array(["b1", "b1", "b2", "b2"]))[0]) == 1
+    profiles, _ = simulate("shift", SimSettings(n_regions=200, n_ref=2, n_alt=2), seed=9)
+    for k, smp in enumerate(profiles.samples):
+        smp["batch"] = "b1" if k < 2 else "b2"
+    res = per_region_tests(analyse(profiles, Config(reference="WT", alternative="KO", bootstrap=10)))
+    assert np.all(res.tests["shape_kernel"]["call"] == "not_tested")
+    assert any("condition and batch coincide" in n for n in res.notes)
+
+
+def test_kernel_test_does_not_turn_amplitude_changes_into_shape_calls():
+    """Signed normalisation: with 4 vs 4 and fine bins, clipping made amplitude-only changes look like broadening."""
+    st = SimSettings(n_ref=4, n_alt=4, flank=3000, binsize=10, n_regions=250)
+    for scenario in ("amplitude", "site_amplitude"):
+        profiles, _ = simulate(scenario, st, seed=31)
+        cfg = Config(reference="WT", alternative="KO", flank=3000, binsize=10, bootstrap=10)
+        res = per_region_tests(analyse(profiles, cfg, bootstrap=0))
+        assert (res.tests["shape_kernel"]["call"] == "Changed").mean() < 0.005
