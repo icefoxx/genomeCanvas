@@ -748,7 +748,8 @@ along the covariate; a 2-D grid with a noise-whiteness covariate.</p>
 <li>Low-depth <code>shift</code> at 3000 regions: 0.011–0.013 (1.1–1.3×).</li>
 </ul>
 <h2>5. Per-class FDR and stratified BH</h2>
-<p>BH controls the FDR of the whole list. A class with almost no power (broad peaks, power ≤ 0.06) collects
+<p>Global BH targets the FDR of the whole list (formal control requires valid input p-values and suitable
+dependence; here calibration is assessed empirically). A class with almost no power (broad peaks, power ≤ 0.06) collects
 mostly false calls even with calibrated p-values. Stratified BH targets the FDR within each stratum, but
 (i) only strata that match the subgroup help, and (ii) the combined list is then <strong>not</strong> FDR-controlled
 at the same level: two strata with one true null each give 1 − 0.95² ≈ 0.0975 at level 0.05 (the

@@ -23,8 +23,8 @@ What the evidence supports, and what it does not:
 | FDR within a subgroup (e.g. broad or shallow regions) under global BH | **not supported**; optional stratified BH targets it within matching strata and loses the combined-list level |
 | exact permutation validity across regions | not claimed (the null is pooled; cross-region comparability is empirical) |
 | real-data calibration | PRO-seq 3 vs 3 within nominal; **yeast MNase 2 vs 2 above nominal** (`shape_kernel` FDP 0.11–0.13, `shape_any` 0.10–0.11); the excess is associated with replicate structure, cause undetermined |
-| more sensitive than edgeR diffSpliceDGE | pre-specified comparison met for 50 bp (narrow) and 100 bp (medium) translations at BH 5 %; at comparable observed FDP the advantage is robust for 50 bp on narrow peaks, small or absent for 100 bp on medium peaks, modest for broadening at 3 vs 3; neither detects broadening at 2 vs 2; simulation only |
-| translation estimate (bp) | a consistency-checked shift that best matches the two condition-mean profiles; direction correct in every evaluated cell; estimate ÷ true 0.94–1.08 where `shift` power ≥ 0.3; biased upwards (up to 1.38) near the detection limit (selection) |
+| more sensitive than edgeR diffSpliceDGE | pre-specified comparison met for 50 bp (narrow) and 100 bp (medium) translations at BH 5 %, where diffSplice is also more conservative. Along the power–FDP curves: for 50 bp on narrow peaks ProfileSeg has higher power at similar or lower observed FDP; for 100 bp on medium peaks ProfileSeg reaches equal or higher power at lower FDP than diffSplice's nearest points, but the discrete operating points do not fix the size of the gap at equal FDP; broadening at 3 vs 3 modest; neither detects broadening at 2 vs 2; simulation only |
+| translation estimate (bp) | a consistency-checked shift that best matches the two condition-mean profiles, reported only for regions that are significant in `shift` and pass the consistency checks. Within that selected subset: direction correct in every evaluated cell; per-cell median estimate ÷ true 0.94–1.08 where `shift` power ≥ 0.3, up to 1.38 near the detection limit (selection). The subset can be small: the share of translated regions that receive a reported shift ranges from ≈ 0 to 1.00 across cells (e.g. 0.004 for bimodal profiles at 200 bp, where `shape_any` detects 1.00) |
 | ProfileSeg identifies translations as a mechanism | **not supported**: `translation_consistent` is a fit-consistency flag; one-sided gains that reach significance pass it; a stricter cut was evaluated and rejected |
 | per-region absolute amplitude | **miscalibrated** under complete nulls in two designs (FWER = FDR 0.20 and 0.275); not claimed |
 
@@ -45,10 +45,13 @@ generally superior to count-based alternatives.
 - **Null.** Statistics of all non-observed label assignments, pooled over regions; in v3 pooled within quantile
   strata of each region's total spread (identical under every assignment) when each stratum keeps ≥ 200
   regions and ≥ 2000 null values. The output reports the number of testable regions, strata and null values.
-- **Translation description.** `estimate` = cross-correlation shift of the condition means (all lags). A
-  direction (Higher/Lower) and bp value are given only when it agrees in sign with the projection, explains
-  ≥ 50 % of the between-condition difference (`translation_r2`) and is unambiguous (`translation_ambiguity`
-  < 0.9); otherwise `Changed`, NaN bp and the reason in `translation_flag`. `translation_fit` (high_r2 ≥ 0.8 /
+- **Translation description.** `estimate` = cross-correlation shift of the condition means, from a global
+  search over a bounded lag range (±25 % of the core window; ±500 bp with the default ±1000 bp core); an optimum
+  on the search boundary is flagged (`search_edge`) and gives no estimate. For regions significant in `shift`,
+  a direction (Higher/Lower) and bp value are given only when the shift agrees in sign with the projection,
+  explains ≥ 50 % of the between-condition difference (`translation_r2`) and is unambiguous
+  (`translation_ambiguity` < 0.9); otherwise the significant region is reported as `Changed`, with NaN bp and
+  the reason in `translation_flag`. Non-significant regions stay Not_significant. `translation_fit` (high_r2 ≥ 0.8 /
   moderate_r2) is descriptive. The earlier per-sample template fit is kept as `shift_bp_fit`.
 - **Diagnostics.** Depth per region (exact for BAM, estimated for bigWig), replicate influence, batch
   confounding (tests refused when condition and batch coincide), fragment-length QC for BAM.
@@ -219,16 +222,18 @@ Class FDP (mean over runs) and whole-list FDP [95 % CI], `mixed_large`, by FDR s
 | 3v3 | depth | shape_any | 0.028 | 0.220 | 0.056 | 0.044 [0.042, 0.047] / 0.40 |
 <!-- /gen:fdrstrata -->
 
-BH controls the FDR of the whole list. Within-stratum BH (`inference.fdr_strata`) targets the FDR within
-strata that match the subgroup of interest; the combined list is then not controlled at the same level (two
-strata with one null each: 1 − 0.95² ≈ 0.0975 at 0.05).
+Global BH targets the FDR of the whole list; formal control requires valid input p-values and suitable
+dependence conditions, and the validity of these pooled-null p-values across heterogeneous regions is exactly
+what is assessed empirically here. Within-stratum BH (`inference.fdr_strata`) targets the FDR within strata
+that match the subgroup of interest; the combined list is then not controlled at the same level (two strata
+with one null each: 1 − 0.95² ≈ 0.0975 at 0.05).
 
 ## 4. Real data
 
 ### 4.1 In-silico insertion on real replicates
 
-Within-condition splits of real replicates (no true difference) with known changes inserted into 20 % of
-regions (`benchmarks/profileseg_insertion.py`; output `benchmarks/results/round3/insertion`, run
+Within-condition splits of real replicates — candidate null controls, not a gold standard known to be free
+of systematic differences — with known changes inserted into 20 % of regions (`benchmarks/profileseg_insertion.py`; output `benchmarks/results/round3/insertion`, run
 2026-10-26T21:36:14, regional.py `15a257546ec0aa00`; the shape tests have not changed since).
 
 | data | test | real null: share called / FWER | amplitude-only: share called | shift 20 / 50 / 100 bp: power (FDP) | broaden ×1.3 / ×1.5: power (FDP) |
@@ -244,8 +249,10 @@ Real-null splits reuse the same replicates; they are not independent validations
 
 ### 4.2 The yeast excess and replicate structure
 
-All excess yeast calls come from the "replicates 1+2 vs 3+4" splits of four genotypes. A label-free measure
-(across-pair / within-pair distance of per-sample meta-profiles) tracks them:
+The inflation of false discoveries on yeast is concentrated in the "replicates 1+2 vs 3+4" splits of four
+genotypes (other splits are not all at nominal level: e.g. WT 1+2 has FDP 0.081). It is associated with a
+grouping distance computed without ProfileSeg p-values (across-pair / within-pair distance of per-sample
+meta-profiles; it depends on the split being evaluated, so it is not label-free in the strict sense):
 
 | genotype | split | pairing ratio | shape_kernel null calls | shape_any null calls | shift null calls | FDP kernel / any / shift |
 |---|---|---|---|---|---|---|
@@ -281,32 +288,37 @@ evidence that the null is valid on these data, and no split is excluded from any
 
 ### 5.1 Power and estimate accuracy (`round4/shift`; seeds 9 400 000+; current decision rule)
 
-| shape | design | d (bp) | power: shift / shape_kernel / shape_any | consistent share of called | direction (consistent) | estimate ÷ true (consistent) | earlier template fit ÷ true (sign ok) |
-|---|---|---|---|---|---|---|---|
-| gauss60 | 3v3 | 50 | 0.85 / 0.87 / 0.90 | 0.99 | 1.000 | 1.03 | 1.01 (0.90) |
-| gauss60 | 3v3 | 100 | 1.00 / 1.00 / 1.00 | 1.00 | 1.000 | 1.00 | 0.83 (0.69) |
-| gauss60 | 3v3 | 150 | 0.84 / 1.00 / 1.00 | 1.00 | 1.000 | 0.99 | 0.11 (0.53) |
-| gauss60 | 3v3 | 200 | 0.40 / 1.00 / 1.00 | 1.00 | 1.000 | 0.99 | -0.04 (0.50) |
-| gauss150 | 3v3 | 50 | 0.07 / 0.17 / 0.15 | 0.97 | 1.000 | 1.38 | 1.37 (0.98) |
-| gauss150 | 3v3 | 100 | 0.80 / 0.92 / 0.92 | 0.99 | 1.000 | 1.02 | 1.02 (0.99) |
-| gauss150 | 3v3 | 150 | 0.97 / 1.00 / 1.00 | 1.00 | 1.000 | 1.00 | 1.00 (0.97) |
-| gauss150 | 3v3 | 200 | 1.00 / 1.00 / 1.00 | 1.00 | 1.000 | 0.99 | 0.97 (0.95) |
-| gauss400 | 3v3 | 50 | 0.00 / 0.00 / 0.00 | – | – | – | – (–) |
-| gauss400 | 3v3 | 100 | 0.01 / 0.10 / 0.07 | 0.95 | 1.000 | 1.16 | 1.10 (1.00) |
-| gauss400 | 3v3 | 150 | 0.17 / 0.60 / 0.55 | 0.97 | 1.000 | 1.04 | 0.99 (1.00) |
-| gauss400 | 3v3 | 200 | 0.43 / 0.87 / 0.84 | 0.98 | 1.000 | 1.01 | 0.96 (1.00) |
-| bimodal | 3v3 | 50 | 0.94 / 0.80 / 0.94 | 0.98 | 1.000 | 1.01 | 0.84 (0.88) |
-| bimodal | 3v3 | 100 | 1.00 / 1.00 / 1.00 | 1.00 | 1.000 | 1.00 | 0.86 (0.80) |
-| bimodal | 3v3 | 150 | 0.78 / 1.00 / 1.00 | 1.00 | 1.000 | 0.99 | 0.75 (0.72) |
-| bimodal | 3v3 | 200 | 0.07 / 1.00 / 1.00 | 0.06 | 1.000 | 0.96 | 0.27 (0.61) |
-| real_GSE112560 | 3v3 | 50 | 0.18 / 0.06 / 0.15 | 0.79 | 1.000 | 1.13 | 1.02 (0.89) |
-| real_GSE112560 | 3v3 | 100 | 0.79 / 0.88 / 0.91 | 0.87 | 1.000 | 0.94 | 0.88 (0.87) |
-| real_GSE112560 | 3v3 | 150 | 0.82 / 0.99 / 0.98 | 0.93 | 1.000 | 0.94 | 0.87 (0.83) |
-| real_GSE112560 | 3v3 | 200 | 0.64 / 0.99 / 0.99 | 0.93 | 1.000 | 0.95 | 0.88 (0.82) |
+| shape | design | d (bp) | power: shift / shape_kernel / shape_any | consistent share of `shift`-called | reported-shift coverage¹ | direction (consistent) | estimate ÷ true (consistent)² | earlier template fit ÷ true (sign ok) |
+|---|---|---|---|---|---|---|---|---|
+| gauss60 | 3v3 | 50 | 0.85 / 0.87 / 0.90 | 0.99 | 0.840 | 1.000 | 1.03 | 1.01 (0.90) |
+| gauss60 | 3v3 | 100 | 1.00 / 1.00 / 1.00 | 1.00 | 0.997 | 1.000 | 1.00 | 0.83 (0.69) |
+| gauss60 | 3v3 | 150 | 0.84 / 1.00 / 1.00 | 1.00 | 0.843 | 1.000 | 0.99 | 0.11 (0.53) |
+| gauss60 | 3v3 | 200 | 0.40 / 1.00 / 1.00 | 1.00 | 0.400 | 1.000 | 0.99 | -0.04 (0.50) |
+| gauss150 | 3v3 | 50 | 0.07 / 0.17 / 0.15 | 0.97 | 0.064 | 1.000 | 1.38 | 1.37 (0.98) |
+| gauss150 | 3v3 | 100 | 0.80 / 0.92 / 0.92 | 0.99 | 0.793 | 1.000 | 1.02 | 1.02 (0.99) |
+| gauss150 | 3v3 | 150 | 0.97 / 1.00 / 1.00 | 1.00 | 0.968 | 1.000 | 1.00 | 1.00 (0.97) |
+| gauss150 | 3v3 | 200 | 1.00 / 1.00 / 1.00 | 1.00 | 0.995 | 1.000 | 0.99 | 0.97 (0.95) |
+| gauss400 | 3v3 | 50 | 0.00 / 0.00 / 0.00 | – | 0.000 | – | – | – (–) |
+| gauss400 | 3v3 | 100 | 0.01 / 0.10 / 0.07 | 0.95 | 0.007 | 1.000 | 1.16 | 1.10 (1.00) |
+| gauss400 | 3v3 | 150 | 0.17 / 0.60 / 0.55 | 0.97 | 0.167 | 1.000 | 1.04 | 0.99 (1.00) |
+| gauss400 | 3v3 | 200 | 0.43 / 0.87 / 0.84 | 0.98 | 0.425 | 1.000 | 1.01 | 0.96 (1.00) |
+| bimodal | 3v3 | 50 | 0.94 / 0.80 / 0.94 | 0.98 | 0.926 | 1.000 | 1.01 | 0.84 (0.88) |
+| bimodal | 3v3 | 100 | 1.00 / 1.00 / 1.00 | 1.00 | 0.998 | 1.000 | 1.00 | 0.86 (0.80) |
+| bimodal | 3v3 | 150 | 0.78 / 1.00 / 1.00 | 1.00 | 0.775 | 1.000 | 0.99 | 0.75 (0.72) |
+| bimodal | 3v3 | 200 | 0.07 / 1.00 / 1.00 | 0.06 | 0.004 | 1.000 | 0.96 | 0.27 (0.61) |
+| real_GSE112560 | 3v3 | 50 | 0.18 / 0.06 / 0.15 | 0.79 | 0.143 | 1.000 | 1.13 | 1.02 (0.89) |
+| real_GSE112560 | 3v3 | 100 | 0.79 / 0.88 / 0.91 | 0.87 | 0.692 | 1.000 | 0.94 | 0.88 (0.87) |
+| real_GSE112560 | 3v3 | 150 | 0.82 / 0.99 / 0.98 | 0.93 | 0.767 | 1.000 | 0.94 | 0.87 (0.83) |
+| real_GSE112560 | 3v3 | 200 | 0.64 / 0.99 / 0.99 | 0.93 | 0.596 | 1.000 | 0.95 | 0.88 (0.82) |
 
-- Direction of consistent calls: correct in every cell evaluated.
-- Estimate (median over consistent calls, d ≥ 50 bp): 0.94–1.08 of the truth in cells with `shift` power ≥ 0.3;
-  1.13–1.38 in cells with power ≤ 0.26 (selection among the few regions that pass).
+¹ Share of translated regions that are significant in `shift` and pass the consistency checks, i.e. that
+receive a direction and bp value (shift power × consistent share). ² Per-run median over consistent calls,
+averaged over runs; individual regions vary around it.
+
+- Direction of consistent calls: correct in every cell evaluated — a statement about the selected subset,
+  whose coverage (¹) can be small.
+- Estimate (²): 0.94–1.08 of the truth in cells with `shift` power ≥ 0.3; 1.13–1.38 in cells with power
+  ≤ 0.26 (selection among the few regions that pass).
 - The `shift` test loses power once the translation exceeds ~1.5–2 peak widths (narrow peaks at 200 bp,
   bimodal at 200 bp); `shape_kernel` and `shape_any` stay monotone. Use `shape_any` for detection.
 - The earlier template fit failed beyond ~2 peak widths (sign ≈ 50 %); it is kept only as `shift_bp_fit`.
@@ -384,9 +396,12 @@ Controls without a shape change (share of runs with any call):
 | site_amplitude | 3v3 | 0.00 | 1.00 | 0.04 | 0.00 |
 
 Reading: at BH 5 % diffSplice is conservative (FDP 0.014–0.033) and ProfileSeg runs at 0.045–0.048, so part of
-the BH-5 % difference is calibration. At similar observed FDP: 50 bp on narrow peaks — 0.71 vs 0.50 (2 vs 2),
-0.89 vs 0.79 (3 vs 3); 100 bp on medium peaks — 0.77 vs 0.73 and 0.93 vs 0.92; broadening at 3 vs 3 — 0.22–0.34
-vs 0.18. All-bin diffSplice calls under amplitude-only changes because the raw count distribution over bins
+the BH-5 % difference is calibration. Along the curves: 50 bp on narrow peaks — ProfileSeg 0.71 at FDP 0.048 vs
+diffSplice 0.50 at 0.052 (2 vs 2), 0.89 at 0.045 vs 0.79 at 0.062 (3 vs 3): higher power at similar or lower FDP.
+100 bp on medium peaks — ProfileSeg 0.77 at 0.045 vs diffSplice 0.73 at 0.075 (2 vs 2), 0.93 at 0.047 vs 0.92 at
+0.077 (3 vs 3): ProfileSeg reaches equal or higher power at lower FDP, but these discrete operating points differ
+in FDP and do not determine the gap at equal FDP; the curves approach each other as thresholds loosen.
+Broadening at 3 vs 3 — 0.22 (FDP 0.031) and 0.34 (0.074) vs 0.18 (0.054): modest. All-bin diffSplice calls under amplitude-only changes because the raw count distribution over bins
 does change when a peak scales over constant background: a difference in target, not an FDR failure. Limits:
 ProfileSeg's simulator, comparator configurations chosen by us, no real-count comparison.
 

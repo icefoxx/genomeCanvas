@@ -72,11 +72,11 @@ regions, needed because 2 or 3 replicates per group give only 3 or 10 label assi
 </tr>
 <tr>
 <td>more sensitive than edgeR diffSpliceDGE</td>
-<td>pre-specified comparison met for 50 bp (narrow) and 100 bp (medium) translations at BH 5 %; at comparable observed FDP the advantage is robust for 50 bp on narrow peaks, small or absent for 100 bp on medium peaks, modest for broadening at 3 vs 3; neither detects broadening at 2 vs 2; simulation only</td>
+<td>pre-specified comparison met for 50 bp (narrow) and 100 bp (medium) translations at BH 5 %, where diffSplice is also more conservative. Along the power–FDP curves: for 50 bp on narrow peaks ProfileSeg has higher power at similar or lower observed FDP; for 100 bp on medium peaks ProfileSeg reaches equal or higher power at lower FDP than diffSplice's nearest points, but the discrete operating points do not fix the size of the gap at equal FDP; broadening at 3 vs 3 modest; neither detects broadening at 2 vs 2; simulation only</td>
 </tr>
 <tr>
 <td>translation estimate (bp)</td>
-<td>a consistency-checked shift that best matches the two condition-mean profiles; direction correct in every evaluated cell; estimate ÷ true 0.94–1.08 where <code>shift</code> power ≥ 0.3; biased upwards (up to 1.38) near the detection limit (selection)</td>
+<td>a consistency-checked shift that best matches the two condition-mean profiles, reported only for regions that are significant in <code>shift</code> and pass the consistency checks. Within that selected subset: direction correct in every evaluated cell; per-cell median estimate ÷ true 0.94–1.08 where <code>shift</code> power ≥ 0.3, up to 1.38 near the detection limit (selection). The subset can be small: the share of translated regions that receive a reported shift ranges from ≈ 0 to 1.00 across cells (e.g. 0.004 for bimodal profiles at 200 bp, where <code>shape_any</code> detects 1.00)</td>
 </tr>
 <tr>
 <td>ProfileSeg identifies translations as a mechanism</td>
@@ -104,10 +104,13 @@ generally superior to count-based alternatives.</p>
 <li><strong>Null.</strong> Statistics of all non-observed label assignments, pooled over regions; in v3 pooled within quantile
   strata of each region's total spread (identical under every assignment) when each stratum keeps ≥ 200
   regions and ≥ 2000 null values. The output reports the number of testable regions, strata and null values.</li>
-<li><strong>Translation description.</strong> <code>estimate</code> = cross-correlation shift of the condition means (all lags). A
-  direction (Higher/Lower) and bp value are given only when it agrees in sign with the projection, explains
-  ≥ 50 % of the between-condition difference (<code>translation_r2</code>) and is unambiguous (<code>translation_ambiguity</code>
-  &lt; 0.9); otherwise <code>Changed</code>, NaN bp and the reason in <code>translation_flag</code>. <code>translation_fit</code> (high_r2 ≥ 0.8 /
+<li><strong>Translation description.</strong> <code>estimate</code> = cross-correlation shift of the condition means, from a global
+  search over a bounded lag range (±25 % of the core window; ±500 bp with the default ±1000 bp core); an optimum
+  on the search boundary is flagged (<code>search_edge</code>) and gives no estimate. For regions significant in <code>shift</code>,
+  a direction (Higher/Lower) and bp value are given only when the shift agrees in sign with the projection,
+  explains ≥ 50 % of the between-condition difference (<code>translation_r2</code>) and is unambiguous
+  (<code>translation_ambiguity</code> &lt; 0.9); otherwise the significant region is reported as <code>Changed</code>, with NaN bp and
+  the reason in <code>translation_flag</code>. Non-significant regions stay Not_significant. <code>translation_fit</code> (high_r2 ≥ 0.8 /
   moderate_r2) is descriptive. The earlier per-sample template fit is kept as <code>shift_bp_fit</code>.</li>
 <li><strong>Diagnostics.</strong> Depth per region (exact for BAM, estimated for bigWig), replicate influence, batch
   confounding (tests refused when condition and batch coincide), fragment-length QC for BAM.</li>
@@ -1096,13 +1099,15 @@ classes and tests (nominal 0.01). Sources: <code>round3/mixed_n_v3</code>, <code
 </table></div>
 <!-- /gen:fdrstrata -->
 
-<p>BH controls the FDR of the whole list. Within-stratum BH (<code>inference.fdr_strata</code>) targets the FDR within
-strata that match the subgroup of interest; the combined list is then not controlled at the same level (two
-strata with one null each: 1 − 0.95² ≈ 0.0975 at 0.05).</p>
+<p>Global BH targets the FDR of the whole list; formal control requires valid input p-values and suitable
+dependence conditions, and the validity of these pooled-null p-values across heterogeneous regions is exactly
+what is assessed empirically here. Within-stratum BH (<code>inference.fdr_strata</code>) targets the FDR within strata
+that match the subgroup of interest; the combined list is then not controlled at the same level (two strata
+with one null each: 1 − 0.95² ≈ 0.0975 at 0.05).</p>
 <h2>4. Real data</h2>
 <h3>4.1 In-silico insertion on real replicates</h3>
-<p>Within-condition splits of real replicates (no true difference) with known changes inserted into 20 % of
-regions (<code>benchmarks/profileseg_insertion.py</code>; output <code>benchmarks/results/round3/insertion</code>, run
+<p>Within-condition splits of real replicates — candidate null controls, not a gold standard known to be free
+of systematic differences — with known changes inserted into 20 % of regions (<code>benchmarks/profileseg_insertion.py</code>; output <code>benchmarks/results/round3/insertion</code>, run
 2026-10-26T21:36:14, regional.py <code>15a257546ec0aa00</code>; the shape tests have not changed since).</p>
 <div class="table"><table>
 <thead>
@@ -1168,8 +1173,10 @@ regions (<code>benchmarks/profileseg_insertion.py</code>; output <code>benchmark
 </table></div>
 <p>Real-null splits reuse the same replicates; they are not independent validations.</p>
 <h3>4.2 The yeast excess and replicate structure</h3>
-<p>All excess yeast calls come from the "replicates 1+2 vs 3+4" splits of four genotypes. A label-free measure
-(across-pair / within-pair distance of per-sample meta-profiles) tracks them:</p>
+<p>The inflation of false discoveries on yeast is concentrated in the "replicates 1+2 vs 3+4" splits of four
+genotypes (other splits are not all at nominal level: e.g. WT 1+2 has FDP 0.081). It is associated with a
+grouping distance computed without ProfileSeg p-values (across-pair / within-pair distance of per-sample
+meta-profiles; it depends on the split being evaluated, so it is not label-free in the strict sense):</p>
 <div class="table"><table>
 <thead>
 <tr>
@@ -1363,9 +1370,10 @@ evidence that the null is valid on these data, and no split is excluded from any
 <th>design</th>
 <th>d (bp)</th>
 <th>power: shift / shape_kernel / shape_any</th>
-<th>consistent share of called</th>
+<th>consistent share of <code>shift</code>-called</th>
+<th>reported-shift coverage¹</th>
 <th>direction (consistent)</th>
-<th>estimate ÷ true (consistent)</th>
+<th>estimate ÷ true (consistent)²</th>
 <th>earlier template fit ÷ true (sign ok)</th>
 </tr>
 </thead>
@@ -1376,6 +1384,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>50</td>
 <td>0.85 / 0.87 / 0.90</td>
 <td>0.99</td>
+<td>0.840</td>
 <td>1.000</td>
 <td>1.03</td>
 <td>1.01 (0.90)</td>
@@ -1386,6 +1395,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>100</td>
 <td>1.00 / 1.00 / 1.00</td>
 <td>1.00</td>
+<td>0.997</td>
 <td>1.000</td>
 <td>1.00</td>
 <td>0.83 (0.69)</td>
@@ -1396,6 +1406,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>150</td>
 <td>0.84 / 1.00 / 1.00</td>
 <td>1.00</td>
+<td>0.843</td>
 <td>1.000</td>
 <td>0.99</td>
 <td>0.11 (0.53)</td>
@@ -1406,6 +1417,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>200</td>
 <td>0.40 / 1.00 / 1.00</td>
 <td>1.00</td>
+<td>0.400</td>
 <td>1.000</td>
 <td>0.99</td>
 <td>-0.04 (0.50)</td>
@@ -1416,6 +1428,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>50</td>
 <td>0.07 / 0.17 / 0.15</td>
 <td>0.97</td>
+<td>0.064</td>
 <td>1.000</td>
 <td>1.38</td>
 <td>1.37 (0.98)</td>
@@ -1426,6 +1439,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>100</td>
 <td>0.80 / 0.92 / 0.92</td>
 <td>0.99</td>
+<td>0.793</td>
 <td>1.000</td>
 <td>1.02</td>
 <td>1.02 (0.99)</td>
@@ -1436,6 +1450,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>150</td>
 <td>0.97 / 1.00 / 1.00</td>
 <td>1.00</td>
+<td>0.968</td>
 <td>1.000</td>
 <td>1.00</td>
 <td>1.00 (0.97)</td>
@@ -1446,6 +1461,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>200</td>
 <td>1.00 / 1.00 / 1.00</td>
 <td>1.00</td>
+<td>0.995</td>
 <td>1.000</td>
 <td>0.99</td>
 <td>0.97 (0.95)</td>
@@ -1456,6 +1472,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>50</td>
 <td>0.00 / 0.00 / 0.00</td>
 <td>–</td>
+<td>0.000</td>
 <td>–</td>
 <td>–</td>
 <td>– (–)</td>
@@ -1466,6 +1483,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>100</td>
 <td>0.01 / 0.10 / 0.07</td>
 <td>0.95</td>
+<td>0.007</td>
 <td>1.000</td>
 <td>1.16</td>
 <td>1.10 (1.00)</td>
@@ -1476,6 +1494,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>150</td>
 <td>0.17 / 0.60 / 0.55</td>
 <td>0.97</td>
+<td>0.167</td>
 <td>1.000</td>
 <td>1.04</td>
 <td>0.99 (1.00)</td>
@@ -1486,6 +1505,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>200</td>
 <td>0.43 / 0.87 / 0.84</td>
 <td>0.98</td>
+<td>0.425</td>
 <td>1.000</td>
 <td>1.01</td>
 <td>0.96 (1.00)</td>
@@ -1496,6 +1516,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>50</td>
 <td>0.94 / 0.80 / 0.94</td>
 <td>0.98</td>
+<td>0.926</td>
 <td>1.000</td>
 <td>1.01</td>
 <td>0.84 (0.88)</td>
@@ -1506,6 +1527,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>100</td>
 <td>1.00 / 1.00 / 1.00</td>
 <td>1.00</td>
+<td>0.998</td>
 <td>1.000</td>
 <td>1.00</td>
 <td>0.86 (0.80)</td>
@@ -1516,6 +1538,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>150</td>
 <td>0.78 / 1.00 / 1.00</td>
 <td>1.00</td>
+<td>0.775</td>
 <td>1.000</td>
 <td>0.99</td>
 <td>0.75 (0.72)</td>
@@ -1526,6 +1549,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>200</td>
 <td>0.07 / 1.00 / 1.00</td>
 <td>0.06</td>
+<td>0.004</td>
 <td>1.000</td>
 <td>0.96</td>
 <td>0.27 (0.61)</td>
@@ -1536,6 +1560,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>50</td>
 <td>0.18 / 0.06 / 0.15</td>
 <td>0.79</td>
+<td>0.143</td>
 <td>1.000</td>
 <td>1.13</td>
 <td>1.02 (0.89)</td>
@@ -1546,6 +1571,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>100</td>
 <td>0.79 / 0.88 / 0.91</td>
 <td>0.87</td>
+<td>0.692</td>
 <td>1.000</td>
 <td>0.94</td>
 <td>0.88 (0.87)</td>
@@ -1556,6 +1582,7 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>150</td>
 <td>0.82 / 0.99 / 0.98</td>
 <td>0.93</td>
+<td>0.767</td>
 <td>1.000</td>
 <td>0.94</td>
 <td>0.87 (0.83)</td>
@@ -1566,16 +1593,21 @@ evidence that the null is valid on these data, and no split is excluded from any
 <td>200</td>
 <td>0.64 / 0.99 / 0.99</td>
 <td>0.93</td>
+<td>0.596</td>
 <td>1.000</td>
 <td>0.95</td>
 <td>0.88 (0.82)</td>
 </tr>
 </tbody>
 </table></div>
+<p>¹ Share of translated regions that are significant in <code>shift</code> and pass the consistency checks, i.e. that
+receive a direction and bp value (shift power × consistent share). ² Per-run median over consistent calls,
+averaged over runs; individual regions vary around it.</p>
 <ul>
-<li>Direction of consistent calls: correct in every cell evaluated.</li>
-<li>Estimate (median over consistent calls, d ≥ 50 bp): 0.94–1.08 of the truth in cells with <code>shift</code> power ≥ 0.3;
-  1.13–1.38 in cells with power ≤ 0.26 (selection among the few regions that pass).</li>
+<li>Direction of consistent calls: correct in every cell evaluated — a statement about the selected subset,
+  whose coverage (¹) can be small.</li>
+<li>Estimate (²): 0.94–1.08 of the truth in cells with <code>shift</code> power ≥ 0.3; 1.13–1.38 in cells with power
+  ≤ 0.26 (selection among the few regions that pass).</li>
 <li>The <code>shift</code> test loses power once the translation exceeds ~1.5–2 peak widths (narrow peaks at 200 bp,
   bimodal at 200 bp); <code>shape_kernel</code> and <code>shape_any</code> stay monotone. Use <code>shape_any</code> for detection.</li>
 <li>The earlier template fit failed beyond ~2 peak widths (sign ≈ 50 %); it is kept only as <code>shift_bp_fit</code>.</li>
@@ -2003,9 +2035,12 @@ background-corrected pooled profile, merged to 60 bp, gene-level F), fixed after
 </tbody>
 </table></div>
 <p>Reading: at BH 5 % diffSplice is conservative (FDP 0.014–0.033) and ProfileSeg runs at 0.045–0.048, so part of
-the BH-5 % difference is calibration. At similar observed FDP: 50 bp on narrow peaks — 0.71 vs 0.50 (2 vs 2),
-0.89 vs 0.79 (3 vs 3); 100 bp on medium peaks — 0.77 vs 0.73 and 0.93 vs 0.92; broadening at 3 vs 3 — 0.22–0.34
-vs 0.18. All-bin diffSplice calls under amplitude-only changes because the raw count distribution over bins
+the BH-5 % difference is calibration. Along the curves: 50 bp on narrow peaks — ProfileSeg 0.71 at FDP 0.048 vs
+diffSplice 0.50 at 0.052 (2 vs 2), 0.89 at 0.045 vs 0.79 at 0.062 (3 vs 3): higher power at similar or lower FDP.
+100 bp on medium peaks — ProfileSeg 0.77 at 0.045 vs diffSplice 0.73 at 0.075 (2 vs 2), 0.93 at 0.047 vs 0.92 at
+0.077 (3 vs 3): ProfileSeg reaches equal or higher power at lower FDP, but these discrete operating points differ
+in FDP and do not determine the gap at equal FDP; the curves approach each other as thresholds loosen.
+Broadening at 3 vs 3 — 0.22 (FDP 0.031) and 0.34 (0.074) vs 0.18 (0.054): modest. All-bin diffSplice calls under amplitude-only changes because the raw count distribution over bins
 does change when a peak scales over constant background: a difference in target, not an FDR failure. Limits:
 ProfileSeg's simulator, comparator configurations chosen by us, no real-count comparison.</p>
 <h2>7. Limitations and open items</h2>

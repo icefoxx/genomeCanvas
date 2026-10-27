@@ -156,7 +156,8 @@ Reading:
 
 ## 5. Per-class FDR and stratified BH
 
-BH controls the FDR of the whole list. A class with almost no power (broad peaks, power ≤ 0.06) collects
+Global BH targets the FDR of the whole list (formal control requires valid input p-values and suitable
+dependence; here calibration is assessed empirically). A class with almost no power (broad peaks, power ≤ 0.06) collects
 mostly false calls even with calibrated p-values. Stratified BH targets the FDR within each stratum, but
 (i) only strata that match the subgroup help, and (ii) the combined list is then **not** FDR-controlled
 at the same level: two strata with one true null each give 1 − 0.95² ≈ 0.0975 at level 0.05 (the
