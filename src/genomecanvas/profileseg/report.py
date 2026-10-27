@@ -393,7 +393,17 @@ def write_regional(a: Analysis, regional, out: Path) -> None:
                              strand=reg.get("strand", "."), metric=name, estimate=float(res["estimate"][k]),
                              moderated_t=float(res["t"][k]) if "t" in res else float("nan"),
                              df=float(res["df"][k]) if "df" in res else float("nan"), p=float(res["p"][k]),
-                             fdr=float(res["fdr"][k]), call=str(res["call"][k])))
+                             fdr=float(res["fdr"][k]), call=str(res["call"][k]),
+                             **({"shift_bp_xcorr": float(res["shift_bp_xcorr"][k]), "shift_bp_fit": float(res["shift_bp_fit"][k]),
+                                 "translation_r2": float(res["translation_r2"][k]),
+                                 "translation_ambiguity": float(res["translation_ambiguity"][k]),
+                                 "translation_consistent": bool(res["translation_consistent"][k]),
+                                 "translation_flag": str(res["translation_flag"][k]),
+                                 "translation_fit": str(res["translation_fit"][k])}
+                                if "translation_consistent" in res else
+                                dict(shift_bp_xcorr=float("nan"), shift_bp_fit=float("nan"), translation_r2=float("nan"),
+                                     translation_ambiguity=float("nan"), translation_consistent="", translation_flag="",
+                                     translation_fit=""))))
     m = out / "results" / "metrics"
     _tsv(m / "region_tests.tsv", rows)
     summary = summary_rows(regional)
@@ -416,7 +426,7 @@ def write_regional(a: Analysis, regional, out: Path) -> None:
                      f"{s['changed']} | {s['prior_df']:.3g} | {s['median_estimate']:.3g} |")
     lines += ["", f"Shape tests use the {regional.shape_regions} regions with positive pooled background-corrected "
               "signal. `shape_kernel` is the most powerful shape test (it uses the whole profile); `shift` gives the "
-              "position change in bp. `centroid` / `mad_width` (full-window moments) are kept for continuity and have low "
+              "direction and a cross-correlation shift (bp) only where the translation description is consistent (`translation_consistent`; otherwise Changed, with the reason in `translation_flag`); consistency is not proof of a translation (one-sided gains can pass) and estimates near the detection limit are biased upwards; `shift_bp_fit` keeps the earlier template fit; `shape_any` combines the two shape tests per region before one BH adjustment (one list instead of two). `centroid` / `mad_width` (full-window moments) are kept for continuity and have low "
               "power on broad profiles.", ""]
     lines += [f"* {n}" for n in regional.notes]
     if regional.depth:

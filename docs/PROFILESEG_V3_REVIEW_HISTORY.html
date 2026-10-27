@@ -1,0 +1,3526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review history (rounds 1–6)</title>
+<style>
+:root { --bg:#ffffff; --fg:#1f2328; --muted:#59636e; --line:#d1d9e0; --head:#f6f8fa; --accent:#0969da; --code:#eff1f3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --head:#151b23; --accent:#4493f8; --code:#262c36; } }
+:root[data-theme="dark"] { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --head:#151b23; --accent:#4493f8; --code:#262c36; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 1.9rem; margin: 0 0 .4rem; }
+h2 { font-size: 1.35rem; margin: 2.2rem 0 .6rem; padding-bottom: .3rem; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 1.6rem 0 .5rem; }
+p, li { max-width: 72ch; }
+em { color: var(--muted); }
+code { background: var(--code); padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+a { color: var(--accent); }
+.table { overflow-x: auto; margin: .8rem 0 1.2rem; border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { background: var(--head); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td strong { color: var(--fg); }
+</style>
+</head>
+<body><main>
+<h1>ProfileSeg v3 — review history (rounds 1–6)</h1>
+<p><em>Complete record of the six review rounds, including withdrawn claims and superseded analyses. The current, consolidated packet is <code>docs/PROFILESEG_V3_REVIEW.md</code> (v3.1). Section numbers below are those used during the rounds.</em></p>
+<p><em>2026-10-26. Branch <code>profileseg-v3</code>; baseline tag <code>profileseg-v2.4</code> (<code>13206cc</code>); checkpoint <code>5a5be13</code>
+plus uncommitted changes, identified by the hashes recorded in every run (§4). Version <code>3.0.0.dev0</code>.
+"Seg" currently means region-level screening of differential profiles, not segmentation of curves.</em></p>
+<h2>0. Round 6 — response to round 5 review</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>finding</th>
+<th>assessment</th>
+<th>change / evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>bug and export resolved</td>
+<td>agreed</td>
+<td>—</td>
+</tr>
+<tr>
+<td>2</td>
+<td>power denominators differ between methods (filtered regions drop out)</td>
+<td>correct in principle</td>
+<td>end-to-end power (denominator: every truly changed input region) is now the primary metric; common-set power and regions retained are reported. In practice every method returned ≥ 599 of 600 regions and the two powers differ by ≤ 0.004, so round-5 conclusions are not driven by this</td>
+</tr>
+<tr>
+<td>3</td>
+<td>matched-FDP interpolation is post hoc and joins non-monotone branches (9 curves)</td>
+<td>correct (all 9 are low-power curves where many runs make no call)</td>
+<td>interpolation dropped; pre-specified primary analysis on new seeds (seeds 9 800 000+): end-to-end power at BH 5 %, shape_any versus the round-5-fixed comparator <code>dS_support_agg60_F</code>, paired bootstrap CI of the difference; full power–FDP curves with CIs as secondary</td>
+</tr>
+<tr>
+<td>4</td>
+<td>advantage limited to some medium translations; 2 vs 2 broadening absolutely weak</td>
+<td>correct, and the curves sharpen it (§0a)</td>
+<td>at comparable observed FDP the advantage is robust for 50 bp translations of narrow peaks, small for 100 bp on sd 150 at 2 vs 2 and essentially absent at 3 vs 3; 2 vs 2 broadening power at BH 5 % is 0.01 for ProfileSeg</td>
+</tr>
+<tr>
+<td>5</td>
+<td>bp is a consistency-checked matching shift, not a mechanism</td>
+<td>agreed</td>
+<td>wording in docs and report; tiers renamed <code>high_r2</code> / <code>moderate_r2</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>round-5 diffSplice run recorded an earlier regional.py hash</td>
+<td>correct</td>
+<td>the round-6 run stores the full uncommitted source diff (<code>src.patch</code>) next to its results; regional.py <code>87f0c6c86498c6a5</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>0a. Pre-specified comparison with edgeR diffSpliceDGE (edgeR 4.0.16; 50 runs per cell; seeds 9 800 000+)</h3>
+<p>Primary: end-to-end power at BH 5 %; difference shape_any − dS_support_agg60_F with paired bootstrap CI;
+hypothesis (fixed before the run): CI &gt; 0 for shift50_sd60 and shift100_sd150, 2 vs 2 and 3 vs 3.</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>scenario</th>
+<th>design</th>
+<th>shape_any</th>
+<th>dS_support_agg60_F</th>
+<th>difference [paired bootstrap 95 % CI]</th>
+<th>hypothesis</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>shift20_sd60</td>
+<td>2v2</td>
+<td>0.000±0.000</td>
+<td>0.002±0.001</td>
+<td>-0.002 [-0.003, -0.001]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift20_sd60</td>
+<td>3v3</td>
+<td>0.001±0.003</td>
+<td>0.004±0.002</td>
+<td>-0.002 [-0.005, +0.001]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>2v2</td>
+<td>0.709±0.017</td>
+<td>0.376±0.019</td>
+<td>+0.334 [+0.316, +0.353]</td>
+<td><strong>met</strong></td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>3v3</td>
+<td>0.895±0.009</td>
+<td>0.712±0.012</td>
+<td>+0.183 [+0.170, +0.196]</td>
+<td><strong>met</strong></td>
+</tr>
+<tr>
+<td>shift100_sd60</td>
+<td>2v2</td>
+<td>0.997±0.001</td>
+<td>0.989±0.002</td>
+<td>+0.009 [+0.006, +0.011]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift100_sd60</td>
+<td>3v3</td>
+<td>1.000±0.000</td>
+<td>0.999±0.001</td>
+<td>+0.001 [+0.000, +0.001]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift200_sd60</td>
+<td>2v2</td>
+<td>1.000±0.000</td>
+<td>1.000±0.000</td>
+<td>-0.000 [-0.001, +0.000]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift200_sd60</td>
+<td>3v3</td>
+<td>1.000±0.000</td>
+<td>1.000±0.000</td>
+<td>-0.000 [-0.001, +0.000]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift20_sd150</td>
+<td>2v2</td>
+<td>0.000±0.000</td>
+<td>0.001±0.001</td>
+<td>-0.001 [-0.001, +0.000]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift20_sd150</td>
+<td>3v3</td>
+<td>0.000±0.000</td>
+<td>0.000±0.000</td>
+<td>-0.000 [-0.001, +0.000]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift50_sd150</td>
+<td>2v2</td>
+<td>0.020±0.016</td>
+<td>0.005±0.002</td>
+<td>+0.016 [+0.001, +0.032]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift50_sd150</td>
+<td>3v3</td>
+<td>0.138±0.025</td>
+<td>0.026±0.006</td>
+<td>+0.112 [+0.087, +0.135]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>2v2</td>
+<td>0.769±0.017</td>
+<td>0.523±0.020</td>
+<td>+0.245 [+0.228, +0.264]</td>
+<td><strong>met</strong></td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>3v3</td>
+<td>0.930±0.006</td>
+<td>0.823±0.011</td>
+<td>+0.107 [+0.098, +0.116]</td>
+<td><strong>met</strong></td>
+</tr>
+<tr>
+<td>shift200_sd150</td>
+<td>2v2</td>
+<td>0.997±0.002</td>
+<td>0.996±0.001</td>
+<td>+0.001 [-0.001, +0.002]</td>
+<td></td>
+</tr>
+<tr>
+<td>shift200_sd150</td>
+<td>3v3</td>
+<td>1.000±0.000</td>
+<td>1.000±0.000</td>
+<td>+0.000 [+0.000, +0.000]</td>
+<td></td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>2v2</td>
+<td>0.011±0.012</td>
+<td>0.005±0.003</td>
+<td>+0.006 [-0.004, +0.019]</td>
+<td></td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>3v3</td>
+<td>0.224±0.019</td>
+<td>0.068±0.012</td>
+<td>+0.156 [+0.134, +0.178]</td>
+<td></td>
+</tr>
+<tr>
+<td>side_gain150</td>
+<td>2v2</td>
+<td>0.003±0.006</td>
+<td>0.004±0.002</td>
+<td>-0.002 [-0.006, +0.005]</td>
+<td></td>
+</tr>
+<tr>
+<td>side_gain150</td>
+<td>3v3</td>
+<td>0.062±0.020</td>
+<td>0.030±0.007</td>
+<td>+0.031 [+0.013, +0.050]</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<p>All four pre-specified hypotheses are met. Secondary: end-to-end power / observed FDP along BH levels:</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>scenario</th>
+<th>design</th>
+<th>method</th>
+<th>BH 0.01</th>
+<th>BH 0.02</th>
+<th>BH 0.05</th>
+<th>BH 0.1</th>
+<th>BH 0.2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>shift50_sd60</td>
+<td>2v2</td>
+<td>shape_any</td>
+<td>0.00 / 0.000</td>
+<td>0.46 / 0.013</td>
+<td>0.71 / 0.048</td>
+<td>0.80 / 0.094</td>
+<td>0.89 / 0.197</td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>2v2</td>
+<td>dS_support_agg60_F</td>
+<td>0.16 / 0.007</td>
+<td>0.23 / 0.012</td>
+<td>0.38 / 0.024</td>
+<td>0.50 / 0.052</td>
+<td>0.64 / 0.104</td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>3v3</td>
+<td>shape_any</td>
+<td>0.74 / 0.007</td>
+<td>0.82 / 0.016</td>
+<td>0.89 / 0.045</td>
+<td>0.94 / 0.092</td>
+<td>0.97 / 0.184</td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>3v3</td>
+<td>dS_support_agg60_F</td>
+<td>0.52 / 0.006</td>
+<td>0.60 / 0.015</td>
+<td>0.71 / 0.033</td>
+<td>0.79 / 0.062</td>
+<td>0.86 / 0.117</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>2v2</td>
+<td>shape_any</td>
+<td>0.01 / 0.000</td>
+<td>0.60 / 0.013</td>
+<td>0.77 / 0.045</td>
+<td>0.85 / 0.101</td>
+<td>0.91 / 0.204</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>2v2</td>
+<td>dS_support_agg60_F</td>
+<td>0.32 / 0.003</td>
+<td>0.41 / 0.007</td>
+<td>0.52 / 0.014</td>
+<td>0.62 / 0.035</td>
+<td>0.73 / 0.075</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>3v3</td>
+<td>shape_any</td>
+<td>0.82 / 0.007</td>
+<td>0.88 / 0.016</td>
+<td>0.93 / 0.047</td>
+<td>0.96 / 0.092</td>
+<td>0.98 / 0.183</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>3v3</td>
+<td>dS_support_agg60_F</td>
+<td>0.69 / 0.002</td>
+<td>0.75 / 0.004</td>
+<td>0.82 / 0.016</td>
+<td>0.88 / 0.035</td>
+<td>0.92 / 0.077</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>2v2</td>
+<td>shape_any</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.01 / 0.005</td>
+<td>0.11 / 0.048</td>
+<td>0.25 / 0.159</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>2v2</td>
+<td>dS_support_agg60_F</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.01 / 0.004</td>
+<td>0.03 / 0.013</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>3v3</td>
+<td>shape_any</td>
+<td>0.00 / 0.000</td>
+<td>0.05 / 0.003</td>
+<td>0.22 / 0.031</td>
+<td>0.34 / 0.074</td>
+<td>0.48 / 0.168</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>3v3</td>
+<td>dS_support_agg60_F</td>
+<td>0.02 / 0.000</td>
+<td>0.03 / 0.005</td>
+<td>0.07 / 0.020</td>
+<td>0.11 / 0.026</td>
+<td>0.18 / 0.054</td>
+</tr>
+</tbody>
+</table></div>
+<p>Reading. At BH 5 % diffSplice runs at FDP 0.014–0.033 and ProfileSeg at 0.045–0.048, so part of the BH-5 %
+difference is calibration, not modelling. Comparing points of similar observed FDP along the curves:
+50 bp on sd 60 — ProfileSeg 0.71 (FDP 0.048) vs diffSplice 0.50 (0.052) at 2 vs 2, 0.89 (0.045) vs 0.79 (0.062)
+at 3 vs 3: a robust advantage. 100 bp on sd 150 — 0.77 (0.045) vs 0.73 (0.075) at 2 vs 2 and 0.93 (0.047) vs
+0.92 (0.077) at 3 vs 3: small to none; the BH-5 % gap there is mostly diffSplice's conservativeness.
+Broadening at 3 vs 3: 0.22 (0.031) / 0.34 (0.074) vs 0.18 (0.054): modest; at 2 vs 2 neither method detects
+broadening. These curve comparisons use the simulated truth to read FDP and are descriptive. Limits remain:
+ProfileSeg's own simulator, comparator configurations chosen by us, no real counts.</p>
+<h2>0‴. Round 5 — response to round 4 review</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>finding</th>
+<th>assessment</th>
+<th>change / evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>broadening data in the diffSplice comparison rescaled with the inverse library ratio</td>
+<td><strong>correct; our bug</strong> (counts_b × (library_a / library_b)²)</td>
+<td>fixed; broadening rerun (§0a). Only the broadening scenario concatenated two simulations</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>translation_reliable</code> cannot mean "a translation happened"</td>
+<td>correct</td>
+<td>renamed <code>translation_consistent</code> (fit-consistency flag); docs and report state that one-sided gains can pass. A stricter R² cut (0.8, chosen on development seeds 7 700 000+) was evaluated on new seeds 9 700 000+ and <strong>rejected</strong> (§0b); R² is now reported as a descriptive tier <code>translation_fit</code> (high_r2 ≥ 0.8 / moderate_r2; renamed in round 6 so that it is not read as a confirmed mechanism)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>new diagnostics not exported</td>
+<td>correct</td>
+<td><code>region_tests.tsv</code> now carries <code>shift_bp_xcorr</code>, <code>shift_bp_fit</code>, <code>translation_r2</code>, <code>translation_ambiguity</code>, <code>translation_consistent</code>, <code>translation_flag</code> (direction_mismatch / poor_translation_fit / ambiguous_match / search_edge) and <code>translation_fit</code>; unit-tested; report text updated</td>
+</tr>
+<tr>
+<td>4</td>
+<td>diffSplice comparison not yet fair</td>
+<td>correct; and the round-4 numbers <strong>overstated ProfileSeg's advantage</strong></td>
+<td>support for diffSplice from background-corrected pooled counts (was raw counts); six edgeR configurations; 50 runs per cell with CIs; power compared at matched observed FDP (§0a). The amplitude-only calls of all-bin diffSplice are now described as a difference in target</td>
+</tr>
+<tr>
+<td>5</td>
+<td>hold-out check is not independent validation</td>
+<td>correct</td>
+<td>wording narrowed ("reduces dependence on same-region noise"; region hold-out consistency check; does not resolve the yeast excess)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Code: regional.py <code>28584ac7dd480341</code> (round 4) → current; the decision rule for
+direction and bp is unchanged from round 4 (R² ≥ 0.5), so the round-4 translation evaluation (§0′a below,
+seeds 9 400 000+) applies; this round adds only exported fields, the failure reason and the R² tier.</p>
+<h3>0‴a. ProfileSeg v3 versus edgeR diffSpliceDGE, corrected (round 5; primary analysis superseded by round 6 §0a) (edgeR 4.0.16; 50 runs per cell; seeds 9 500 000+)</h3>
+<p>Power at matched observed FDP 0.05 (interpolated along each method's BH-level curve 0.01–0.2; – = not reached). <strong>Superseded in round 6</strong>: the interpolation joins non-monotone curve branches in 9 low-power curves, uses the truth to pick the operating point, and its denominators were method-specific; kept for the record only.
+"Best diffSplice" is the best of six configurations per cell, chosen after the fact (favours diffSplice):</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>scenario</th>
+<th>design</th>
+<th>shape_any</th>
+<th>shape_kernel</th>
+<th>best diffSplice (config)</th>
+<th>diffSplice support_F</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>shift50_sd60</td>
+<td>2v2</td>
+<td>0.70</td>
+<td>0.62</td>
+<td>0.51 (support_agg60_F)</td>
+<td>0.36</td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>3v3</td>
+<td>0.89</td>
+<td>0.88</td>
+<td>0.76 (support_agg60_F)</td>
+<td>0.67</td>
+</tr>
+<tr>
+<td>shift100_sd60</td>
+<td>2v2</td>
+<td>1.00</td>
+<td>1.00</td>
+<td>0.99 (support_agg40_F)</td>
+<td>0.98</td>
+</tr>
+<tr>
+<td>shift100_sd60</td>
+<td>3v3</td>
+<td>1.00</td>
+<td>1.00</td>
+<td>1.00 (support_agg40_F)</td>
+<td>1.00</td>
+</tr>
+<tr>
+<td>shift50_sd150</td>
+<td>2v2</td>
+<td>0.09</td>
+<td>0.07</td>
+<td>0.01 (support_agg40_F)</td>
+<td>–</td>
+</tr>
+<tr>
+<td>shift50_sd150</td>
+<td>3v3</td>
+<td>0.21</td>
+<td>0.22</td>
+<td>0.10 (support_agg60_F)</td>
+<td>–</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>2v2</td>
+<td>0.78</td>
+<td>0.77</td>
+<td>0.68 (support_agg60_F)</td>
+<td>0.46</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>3v3</td>
+<td>0.93</td>
+<td>0.93</td>
+<td>0.88 (support_agg60_F)</td>
+<td>0.76</td>
+</tr>
+<tr>
+<td>shift200_sd150</td>
+<td>2v2</td>
+<td>0.99</td>
+<td>1.00</td>
+<td>1.00 (support_agg60_F)</td>
+<td>0.99</td>
+</tr>
+<tr>
+<td>shift200_sd150</td>
+<td>3v3</td>
+<td>1.00</td>
+<td>1.00</td>
+<td>1.00 (support_agg60_F)</td>
+<td>1.00</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>2v2</td>
+<td>0.09</td>
+<td>0.12</td>
+<td>0.04 (support_agg60_F)</td>
+<td>–</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>3v3</td>
+<td>0.26</td>
+<td>0.34</td>
+<td>0.18 (support_agg60_F)</td>
+<td>0.07</td>
+</tr>
+<tr>
+<td>side_gain150</td>
+<td>2v2</td>
+<td>0.05</td>
+<td>0.06</td>
+<td>0.01 (support_agg60_F)</td>
+<td>0.00</td>
+</tr>
+<tr>
+<td>side_gain150</td>
+<td>3v3</td>
+<td>0.12</td>
+<td>0.16</td>
+<td>0.05 (support_agg60_F)</td>
+<td>0.01</td>
+</tr>
+</tbody>
+</table></div>
+<p>At BH 5 % (power ± 95 % CI / FDP ± CI):</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>scenario</th>
+<th>design</th>
+<th>shape_any</th>
+<th>dS_support_F</th>
+<th>dS_support_agg60_F</th>
+<th>dS_all_F</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>shift50_sd60</td>
+<td>2v2</td>
+<td>0.69±0.02 / 0.044±0.009</td>
+<td>0.26±0.02 / 0.021±0.007</td>
+<td>0.38±0.02 / 0.024±0.006</td>
+<td>0.01±0.00 / 0.017±0.023</td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>3v3</td>
+<td>0.89±0.01 / 0.048±0.006</td>
+<td>0.60±0.02 / 0.028±0.005</td>
+<td>0.71±0.02 / 0.032±0.005</td>
+<td>0.07±0.01 / 0.005±0.006</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>2v2</td>
+<td>0.78±0.02 / 0.050±0.007</td>
+<td>0.31±0.02 / 0.011±0.005</td>
+<td>0.52±0.02 / 0.013±0.004</td>
+<td>0.10±0.01 / 0.018±0.012</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>3v3</td>
+<td>0.93±0.01 / 0.046±0.006</td>
+<td>0.66±0.01 / 0.014±0.004</td>
+<td>0.82±0.01 / 0.020±0.004</td>
+<td>0.45±0.02 / 0.020±0.004</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>2v2</td>
+<td>0.02±0.02 / 0.006±0.007</td>
+<td>0.00±0.00 / 0.000±0.000</td>
+<td>0.01±0.00 / 0.000±0.000</td>
+<td>0.00±0.00 / 0.040±0.055</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>3v3</td>
+<td>0.24±0.03 / 0.041±0.011</td>
+<td>0.03±0.01 / 0.007±0.010</td>
+<td>0.07±0.01 / 0.016±0.011</td>
+<td>0.04±0.01 / 0.033±0.024</td>
+</tr>
+</tbody>
+</table></div>
+<p>Controls without a shape change (share of runs with any call):</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>control</th>
+<th>design</th>
+<th>shape_any</th>
+<th>dS_all_F</th>
+<th>dS_support_F</th>
+<th>dS_support_agg60_F</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>null</td>
+<td>2v2</td>
+<td>0.00</td>
+<td>0.04</td>
+<td>0.02</td>
+<td>0.02</td>
+</tr>
+<tr>
+<td>null</td>
+<td>3v3</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+</tr>
+<tr>
+<td>amplitude_x2</td>
+<td>2v2</td>
+<td>0.00</td>
+<td>1.00</td>
+<td>0.00</td>
+<td>0.02</td>
+</tr>
+<tr>
+<td>amplitude_x2</td>
+<td>3v3</td>
+<td>0.00</td>
+<td>1.00</td>
+<td>0.02</td>
+<td>0.02</td>
+</tr>
+<tr>
+<td>site_amplitude</td>
+<td>2v2</td>
+<td>0.00</td>
+<td>1.00</td>
+<td>0.00</td>
+<td>0.04</td>
+</tr>
+<tr>
+<td>site_amplitude</td>
+<td>3v3</td>
+<td>0.00</td>
+<td>1.00</td>
+<td>0.06</td>
+<td>0.00</td>
+</tr>
+</tbody>
+</table></div>
+<p>Reading:
+- With a background-corrected support and bin aggregation, diffSplice is much stronger than in round 4
+  (50 bp on sd 60 at 3 vs 3: 0.30 → 0.60 support_F, 0.71 with 60 bp bins at BH 5 %). The round-4 gap was
+  largely a configuration artefact.
+- At matched FDP 0.05 ProfileSeg remains more sensitive for medium translations (e.g. 0.89 vs 0.76 and
+  0.70 vs 0.51 for 50 bp on sd 60; 0.93 vs 0.88 and 0.78 vs 0.68 for 100 bp on sd 150) and for broadening
+  (0.26, <code>shape_kernel</code> 0.34, vs 0.18 at 3 vs 3); large translations are ≈ 1.00 for both.
+- diffSplice remains conservative at BH 5 % (FDP 0.01–0.03); ProfileSeg's largest FDP is 0.055 ± 0.007.
+- Limits: ProfileSeg's own simulator; edgeR configurations chosen by us (not exhaustive); no real counts yet.
+  Supportable claim: more sensitive in these configurations and simulations, not generally superior.</p>
+<h3>0‴b. Stricter translation cut evaluated and rejected (seeds 9 700 000+)</h3>
+<p>R² ≥ 0.8 (development seeds: one-sided gains 0.15 kept, translations 0.75) on new seeds: direction among
+consistent calls 1.000 everywhere (pass); estimate bias outside [0.85, 1.15] in 7 cells (was 4; the cut does not
+reduce selection bias); one-sided gains above 0.2 in 5 cells (gauss60 35 bp 3v3: 0.37; gauss60 50 bp 3v3: 0.52; gauss60 75 bp 3v3: 0.38; gauss60 100 bp 3v3: 0.23; gauss150 200 bp 3v3: 0.23) — <strong>fail</strong>; and translations
+kept with a direction:</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>shape</th>
+<th>3v3 kept share at d = 50 / 100 / 150 / 200 bp</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gauss60</td>
+<td>0.65 / 0.97 / 1.00 / 1.00</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>0.48 / 0.63 / 0.89 / 0.97</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>– / 0.07 / 0.30 / 0.45</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>0.40 / 0.97 / 1.00 / 0.07</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>0.10 / 0.31 / 0.57 / 0.70</td>
+</tr>
+</tbody>
+</table></div>
+<p>On real shapes most translations would lose their bp value while gains still pass in places. R² does not
+separate the two reliably, so it is reported (<code>translation_r2</code>, <code>translation_fit</code>) rather than used as a decision
+rule. Distinguishing translations from other redistributions remains open.</p>
+<h2>0′. Round 4 — response to round 3 review</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>finding</th>
+<th>assessment</th>
+<th>change / evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>translation estimate fails at large shifts; direction near random; label and bp value can disagree</td>
+<td><strong>correct for the bp value; the Higher/Lower label was right</strong>. The label comes from the projection sign, which was correct in 100 % of called translated regions in every cell; the per-sample template fit (a local search from zero) put the sign right in only ~50–60 % at 150–200 bp on narrow peaks</td>
+<td><strong>method change</strong>: <code>estimate</code> is now the cross-correlation shift of the condition means (all lags, no capture range); Higher/Lower only when the translation is reliable (same sign as the projection, <code>translation_r2</code> ≥ 0.5, <code>translation_ambiguity</code> &lt; 0.9), else <code>Changed</code> with NaN bp; the template fit is kept as <code>shift_bp_fit</code>. Evaluated against criteria fixed beforehand on new seeds (§0a): direction <strong>pass</strong>; bias <strong>fails</strong> at the detection limit (selection); one-sided gains <strong>fail</strong> (flagged reliable when <code>shift</code> is significant)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>pairing ratio uses the same curves and the evaluated split; cannot declare those splits invalid nulls</td>
+<td><strong>correct; claim withdrawn</strong>. The ratio is an aggregate between-group statistic on the same data, so its correlation with the calls is expected</td>
+<td>wording: "excess calls are associated with replicate structure; cause undetermined". A held-out-region check (ratio on half A, tests on half B, predictions written beforehand) met both predictions (§0b); this reduces the dependence on noise in the same regions (regions may still be correlated across halves) — the samples are shared</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>shape_any</code> is not a universally reliable final list</td>
+<td>correct</td>
+<td>stated: on yeast it inherits the excess of the structured splits; a combination cannot repair a miscalibrated component</td>
+</tr>
+<tr>
+<td>4</td>
+<td>region boundary should be read as testable regions, specific mix</td>
+<td>correct</td>
+<td>the output now reports testable regions, number of null strata and null values per stratum (note in the per-region results); the boundary was reproduced on new seeds (seeds 9 100 000+: 2 vs 2 per-class p01 0.000–0.022 up to 2000 regions, 0.008–0.015 at 3000; 3 vs 3 0.0075–0.0125 from 1000) and is described as specific to this mix</td>
+</tr>
+<tr>
+<td>5</td>
+<td>edgeR diffSplice comparison missing for v3</td>
+<td>correct</td>
+<td>same simulated counts, same regions (§0c)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Code changed this round (regional.py <code>28584ac7dd480341</code>). The confirmatory calibration run was repeated
+with this code on its original seeds: all 50 original cells identical (<code>benchmarks/results/round4/confirm_v3_rerun</code>).</p>
+<h3>0′a. Translation estimate (criteria fixed before the run; seeds 9 400 000+)</h3>
+<p>Criteria: (1) direction accuracy among reliable called translations ≥ 0.95; (2) median reliable estimate ÷ true
+within [0.85, 1.15] for d ≥ 50 bp; (3) one-sided gain: ≤ 0.2 of <code>shift</code>-called regions flagged reliable.
+Source: <code>benchmarks/results/round4/shift</code> (all shapes, both designs, d = 10–200 bp).</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>shape</th>
+<th>design</th>
+<th>d (bp)</th>
+<th><code>shift</code> power</th>
+<th>reliable share of called</th>
+<th>direction of reported estimate (reliable)</th>
+<th>reported estimate ÷ true (reliable)</th>
+<th>template fit ÷ true (sign ok)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>50</td>
+<td>0.85</td>
+<td>0.99</td>
+<td>1.000</td>
+<td>1.03</td>
+<td>1.01 (0.90)</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>100</td>
+<td>1.00</td>
+<td>1.00</td>
+<td>1.000</td>
+<td>1.00</td>
+<td>0.83 (0.69)</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.84</td>
+<td>1.00</td>
+<td>1.000</td>
+<td>0.99</td>
+<td>0.11 (0.53)</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>200</td>
+<td>0.40</td>
+<td>1.00</td>
+<td>1.000</td>
+<td>0.99</td>
+<td>-0.04 (0.50)</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>50</td>
+<td>0.94</td>
+<td>0.98</td>
+<td>1.000</td>
+<td>1.01</td>
+<td>0.84 (0.88)</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>100</td>
+<td>1.00</td>
+<td>1.00</td>
+<td>1.000</td>
+<td>1.00</td>
+<td>0.86 (0.80)</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.78</td>
+<td>1.00</td>
+<td>1.000</td>
+<td>0.99</td>
+<td>0.75 (0.72)</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>200</td>
+<td>0.07</td>
+<td>0.06</td>
+<td>1.000</td>
+<td>0.96</td>
+<td>0.27 (0.61)</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>50</td>
+<td>0.18</td>
+<td>0.79</td>
+<td>1.000</td>
+<td>1.13</td>
+<td>1.02 (0.89)</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>100</td>
+<td>0.79</td>
+<td>0.87</td>
+<td>1.000</td>
+<td>0.94</td>
+<td>0.88 (0.87)</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.82</td>
+<td>0.93</td>
+<td>1.000</td>
+<td>0.94</td>
+<td>0.87 (0.83)</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>200</td>
+<td>0.64</td>
+<td>0.93</td>
+<td>1.000</td>
+<td>0.95</td>
+<td>0.88 (0.82)</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>(1) <strong>pass</strong> in every cell (1.000).</li>
+<li>(2) <strong>fails in 4 cells</strong>, all where <code>shift</code> power ≤ 0.07 (estimate ÷ true 1.16–1.38): selection bias among the
+  few regions that pass the threshold. Elsewhere 0.94–1.03 for unimodal and real shapes.</li>
+<li>(3) <strong>fails</strong>: one-sided gains rarely reach significance in <code>shift</code> (≤ 5 % of changed regions), but when they
+  do, 60–100 % are flagged reliable with an estimate of 0.3–0.8 × the offset. <code>translation_r2</code> does not separate
+  a one-sided gain from a translation. Not re-tuned on these seeds.</li>
+</ul>
+<div class="table"><table>
+<thead>
+<tr>
+<th>shape</th>
+<th>design</th>
+<th>offset (bp)</th>
+<th><code>shift</code> power (share of changed regions called)</th>
+<th>reliable share of called</th>
+<th><code>shape_any</code> power</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>75</td>
+<td>0.048</td>
+<td>0.97</td>
+<td>0.12</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>100</td>
+<td>0.046</td>
+<td>0.98</td>
+<td>0.29</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.002</td>
+<td>1.00</td>
+<td>0.59</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>3v3</td>
+<td>75</td>
+<td>0.000</td>
+<td>–</td>
+<td>0.01</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>3v3</td>
+<td>100</td>
+<td>0.001</td>
+<td>1.00</td>
+<td>0.02</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.001</td>
+<td>0.60</td>
+<td>0.09</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>75</td>
+<td>0.008</td>
+<td>0.68</td>
+<td>0.02</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>100</td>
+<td>0.007</td>
+<td>0.73</td>
+<td>0.04</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.000</td>
+<td>–</td>
+<td>0.08</td>
+</tr>
+</tbody>
+</table></div>
+<h3>0′b. Held-out-region check of the replicate-structure association</h3>
+<div class="table"><table>
+<thead>
+<tr>
+<th>split</th>
+<th>pairing ratio (A)</th>
+<th>null calls on B: shape_kernel / shape_any / shift</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>isw1rtf1:isw1rtf1_1+isw1rtf1_2</td>
+<td>1.90</td>
+<td>23.06 % / 12.12 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1:rtf1_1+rtf1_2</td>
+<td>1.51</td>
+<td>3.44 % / 3.18 % / 0.00 %</td>
+</tr>
+<tr>
+<td>dKO:dKO_1+dKO_2</td>
+<td>1.41</td>
+<td>9.23 % / 6.15 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1-11A:rtf1-11A_1+rtf1-11A_2</td>
+<td>1.35</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>WT:WT_1+WT_4</td>
+<td>1.09</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1-8-9A:rtf1-8-9A_1+rtf1-8-9A_3</td>
+<td>1.00</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1-8-9A:rtf1-8-9A_1+rtf1-8-9A_2</td>
+<td>1.00</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1-8-9A:rtf1-8-9A_1+rtf1-8-9A_4</td>
+<td>1.00</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>WT:WT_1+WT_3</td>
+<td>0.96</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>WT:WT_1+WT_2</td>
+<td>0.96</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1-11A:rtf1-11A_1+rtf1-11A_4</td>
+<td>0.89</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>dKO:dKO_1+dKO_3</td>
+<td>0.87</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1-11A:rtf1-11A_1+rtf1-11A_3</td>
+<td>0.85</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1:rtf1_1+rtf1_3</td>
+<td>0.85</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>dKO:dKO_1+dKO_4</td>
+<td>0.84</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>rtf1:rtf1_1+rtf1_4</td>
+<td>0.81</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>isw1rtf1:isw1rtf1_1+isw1rtf1_3</td>
+<td>0.77</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+<tr>
+<td>isw1rtf1:isw1rtf1_1+isw1rtf1_4</td>
+<td>0.76</td>
+<td>0.00 % / 0.00 % / 0.00 %</td>
+</tr>
+</tbody>
+</table></div>
+<p>Pre-specified predictions: (1) higher null-call share on B for ratio(A) &gt; 1.2: <strong>met</strong> (8.93 % vs 0.00 %; splits with calls 3 of 4 vs 0 of 14); (2) Spearman &gt; 0.5: <strong>met</strong> (0.51).</p>
+<p>Reading: the association holds when the ratio and the calls come from disjoint regions; this is a region hold-out consistency check, not validation on independent samples, and it does not resolve the excess error rate on yeast (rtf1-11A 1+2 has ratio
+1.35 and no calls). The same replicates enter both halves, so this shows a sample-level difference shared
+across loci, of unknown origin; it is not evidence that the pooled null is valid on these data, and the splits
+are not excluded from any result. Spearman 0.51 only just meets the pre-specified 0.5.</p>
+<h3>0′c. ProfileSeg v3 versus edgeR QL diffSpliceDGE (round 4; superseded by §0a — broadening data wrong, support on raw counts)</h3>
+<div class="table"><table>
+<thead>
+<tr>
+<th>scenario</th>
+<th>design</th>
+<th>shape_any</th>
+<th>shape_kernel</th>
+<th>shift</th>
+<th>diffSplice_all</th>
+<th>diffSplice_support</th>
+<th>ProfileSeg translation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>shift20_sd60</td>
+<td>2v2</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.050</td>
+<td>0.00 · nan · nan</td>
+</tr>
+<tr>
+<td>shift20_sd60</td>
+<td>3v3</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.01 / 0.017</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.19 · 1.91 · 1.00</td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>2v2</td>
+<td>0.69 / 0.045</td>
+<td>0.59 / 0.040</td>
+<td>0.63 / 0.049</td>
+<td>0.01 / 0.017</td>
+<td>0.06 / 0.027</td>
+<td>0.99 · 1.09 · 1.00</td>
+</tr>
+<tr>
+<td>shift50_sd60</td>
+<td>3v3</td>
+<td>0.89 / 0.048</td>
+<td>0.86 / 0.036</td>
+<td>0.84 / 0.047</td>
+<td>0.08 / 0.006</td>
+<td>0.30 / 0.021</td>
+<td>0.99 · 1.03 · 1.00</td>
+</tr>
+<tr>
+<td>shift100_sd60</td>
+<td>2v2</td>
+<td>1.00 / 0.043</td>
+<td>0.99 / 0.043</td>
+<td>0.97 / 0.040</td>
+<td>0.72 / 0.021</td>
+<td>0.89 / 0.028</td>
+<td>1.00 · 0.99 · 1.00</td>
+</tr>
+<tr>
+<td>shift100_sd60</td>
+<td>3v3</td>
+<td>1.00 / 0.057</td>
+<td>1.00 / 0.052</td>
+<td>0.99 / 0.056</td>
+<td>0.96 / 0.021</td>
+<td>0.99 / 0.028</td>
+<td>1.00 · 0.99 · 1.00</td>
+</tr>
+<tr>
+<td>shift200_sd60</td>
+<td>2v2</td>
+<td>1.00 / 0.052</td>
+<td>1.00 / 0.049</td>
+<td>0.32 / 0.063</td>
+<td>1.00 / 0.020</td>
+<td>1.00 / 0.031</td>
+<td>1.00 · 0.98 · 1.00</td>
+</tr>
+<tr>
+<td>shift200_sd60</td>
+<td>3v3</td>
+<td>1.00 / 0.051</td>
+<td>1.00 / 0.054</td>
+<td>0.40 / 0.035</td>
+<td>1.00 / 0.019</td>
+<td>1.00 / 0.030</td>
+<td>1.00 · 0.99 · 1.00</td>
+</tr>
+<tr>
+<td>shift20_sd150</td>
+<td>2v2</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.050</td>
+<td>0.00 / 0.000</td>
+<td>0.00 · nan · nan</td>
+</tr>
+<tr>
+<td>shift20_sd150</td>
+<td>3v3</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.04 · 2.66 · 1.00</td>
+</tr>
+<tr>
+<td>shift50_sd150</td>
+<td>2v2</td>
+<td>0.03 / 0.019</td>
+<td>0.06 / 0.034</td>
+<td>0.01 / 0.014</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.10 · 1.53 · 1.00</td>
+</tr>
+<tr>
+<td>shift50_sd150</td>
+<td>3v3</td>
+<td>0.14 / 0.034</td>
+<td>0.16 / 0.024</td>
+<td>0.06 / 0.033</td>
+<td>0.00 / 0.000</td>
+<td>0.01 / 0.000</td>
+<td>0.59 · 1.41 · 1.00</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>2v2</td>
+<td>0.78 / 0.046</td>
+<td>0.77 / 0.054</td>
+<td>0.54 / 0.041</td>
+<td>0.09 / 0.022</td>
+<td>0.30 / 0.022</td>
+<td>0.99 · 1.05 · 1.00</td>
+</tr>
+<tr>
+<td>shift100_sd150</td>
+<td>3v3</td>
+<td>0.93 / 0.046</td>
+<td>0.92 / 0.040</td>
+<td>0.82 / 0.043</td>
+<td>0.44 / 0.019</td>
+<td>0.68 / 0.021</td>
+<td>0.99 · 1.02 · 1.00</td>
+</tr>
+<tr>
+<td>shift200_sd150</td>
+<td>2v2</td>
+<td>0.99 / 0.055</td>
+<td>0.99 / 0.045</td>
+<td>0.94 / 0.056</td>
+<td>0.98 / 0.021</td>
+<td>0.99 / 0.019</td>
+<td>1.00 · 1.00 · 1.00</td>
+</tr>
+<tr>
+<td>shift200_sd150</td>
+<td>3v3</td>
+<td>1.00 / 0.050</td>
+<td>1.00 / 0.053</td>
+<td>1.00 / 0.047</td>
+<td>1.00 / 0.019</td>
+<td>1.00 / 0.019</td>
+<td>1.00 · 1.00 · 1.00</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>2v2</td>
+<td>0.03 / 0.013</td>
+<td>0.11 / 0.051</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.050</td>
+<td>0.01 / 0.000</td>
+<td>–</td>
+</tr>
+<tr>
+<td>broaden_x1.5</td>
+<td>3v3</td>
+<td>0.25 / 0.034</td>
+<td>0.35 / 0.043</td>
+<td>0.00 / 0.000</td>
+<td>0.02 / 0.027</td>
+<td>0.07 / 0.013</td>
+<td>–</td>
+</tr>
+<tr>
+<td>side_gain150</td>
+<td>2v2</td>
+<td>0.01 / 0.013</td>
+<td>0.05 / 0.037</td>
+<td>0.00 / 0.014</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.050</td>
+<td>–</td>
+</tr>
+<tr>
+<td>side_gain150</td>
+<td>3v3</td>
+<td>0.08 / 0.014</td>
+<td>0.13 / 0.037</td>
+<td>0.00 / 0.000</td>
+<td>0.00 / 0.000</td>
+<td>0.01 / 0.000</td>
+<td>–</td>
+</tr>
+<tr>
+<td>null</td>
+<td>2v2</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.10</td>
+<td>0.05</td>
+<td>–</td>
+</tr>
+<tr>
+<td>null</td>
+<td>3v3</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>–</td>
+</tr>
+<tr>
+<td>amplitude_x2</td>
+<td>2v2</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>1.00</td>
+<td>0.05</td>
+<td>–</td>
+</tr>
+<tr>
+<td>amplitude_x2</td>
+<td>3v3</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>1.00</td>
+<td>0.05</td>
+<td>–</td>
+</tr>
+<tr>
+<td>site_amplitude</td>
+<td>2v2</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>1.00</td>
+<td>0.00</td>
+<td>–</td>
+</tr>
+<tr>
+<td>site_amplitude</td>
+<td>3v3</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>0.00</td>
+<td>1.00</td>
+<td>0.10</td>
+<td>–</td>
+</tr>
+</tbody>
+</table></div>
+<p>Reading:
+- Translations of 50–100 bp and broadening: ProfileSeg detects more (e.g. 50 bp on sd 60: <code>shape_any</code>
+  0.69 / 0.89 vs diffSplice-support 0.06 / 0.30; ×1.5 broadening at 3 vs 3: 0.25 vs 0.07). Large translations:
+  both ≈ 1.00.
+- diffSplice over all core bins calls in every run under amplitude-only changes: with constant background, a
+  higher peak does change the raw count distribution over bins, so this is a difference in target, not an FDR
+  failure (amended in round 5). Restricted to support bins it does not call. ProfileSeg made no calls in any control.
+- diffSplice is conservative here (FDP 0.02–0.03) where ProfileSeg runs at 0.04–0.057; part of the power gap may
+  be calibration rather than modelling.
+- diffSplice gives no bp estimate; ProfileSeg's reliable translations are within 0.98–1.09 of the truth except
+  near the detection limit.
+- Fairness limits: data from ProfileSeg's own simulator (Gaussian or template shapes, negative-binomial counts);
+  one diffSplice configuration (20 bp bins, no filtering or bin aggregation, gene-level F); no real-data counts
+  comparison yet. This is a same-data comparison, not evidence of general superiority.</p>
+<h2>0″. Response to round 2 review (kept for the record; claims amended in round 4)</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>finding</th>
+<th>assessment</th>
+<th>evidence (this round)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>"≥ ~1000 regions" overstated: <code>mixed_large</code> had 3000 regions; at 2 vs 2 strata need ~2000 testable regions</td>
+<td><strong>correct</strong></td>
+<td>region-count sweep (§6a): at 2 vs 2 per-class calibration is unchanged from v2.4 up to 2000 regions (fewer than 2000 testable, no strata) and improves at 3000 and 6000; at 3 vs 3 it is within 0.7–1.4× from 1000 regions, partial at 600. Claims now state these numbers</td>
+</tr>
+<tr>
+<td>2</td>
+<td>real data fail on yeast</td>
+<td><strong>result correct; interpretation partly rebutted</strong>. All excess calls come from the "replicates 1+2 vs 3+4" splits of four genotypes; the 14 other splits have no null calls and FDP 0.000–0.081. A label-free measure that uses no ProfileSeg test (distance between per-sample meta-profiles across vs within the 1,2 / 3,4 pairs) is 1.44–2.28 in exactly those four genotypes and 0.96 in the two without calls; Spearman (ratio, FDP) = 0.91 over 18 splits (§7a). ~~In those splits the two groups differ systematically, so they are not valid nulls.~~ (withdrawn in round 4: the association is not independent evidence) What we cannot show: the origin (batch, culture day or other); SRA metadata carry no batch information (one submission, one instrument model). The ratio and its 1.2 cut-off were examined after the results and are reported as such</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>shape_any</code> had no real-data validation</td>
+<td><strong>correct</strong></td>
+<td>added to the insertion benchmark (§7): PRO-seq no null calls, FDP ≤ 0.015, power ≥ the better component in most cells; yeast FDP 0.099–0.111 with all splits, inheriting <code>shape_kernel</code>'s behaviour on the structured splits (0.006–0.060 elsewhere)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>confirmatory scope limited; 1.4–1.5× is a tolerance, not exact calibration</td>
+<td>correct</td>
+<td>wording: "within the pre-specified tolerance", not "calibrated to nominal"; the confirmatory run shares the simulator, stated as a limitation</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>shift</code> loses power for larger shifts</td>
+<td><strong>correct, and the estimate is worse than noted</strong> (§6b): <code>shift</code> power falls once d exceeds ~1.5–2× the peak sd (sd 60 bp: 1.00 at 100 bp, 0.39 at 200 bp; bimodal: 0.06 at 200 bp), while <code>shape_kernel</code> and <code>shape_any</code> stay monotone (0.99–1.00). The translation estimate collapses in the same range (estimate ÷ true 0.12 and −0.08 at 150 / 200 bp for sd 60 bp; 0.43 for bimodal at 200 bp) and is biased upwards among called regions near the detection limit (1.4–1.9×; selection bias). Partial rebuttal: this is a property of the <code>shift</code> test and the estimate, not of shape detection, which <code>shape_any</code> covers</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<h2>1. Response to round 1 review</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>finding</th>
+<th>assessment</th>
+<th>change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>stratified BH docstring claimed "FDR within every stratum and hence overall"</td>
+<td><strong>correct; our claim was wrong</strong>. Two strata with one true null each give 1 − 0.95² ≈ 0.0975 at level 0.05; the implementation gives 0.099 in 20 000 draws</td>
+<td>docstring, user docs, config comment and plan corrected: within-stratum FDR only; the combined list is not FDR-controlled at the same level. Global BH remains the default</td>
+</tr>
+<tr>
+<td>2</td>
+<td>"controlled in every cell" overstated a no-exceedance criterion</td>
+<td>correct</td>
+<td>all documents now say "no statistically clear exceedance in the scenarios tested; FDR estimates close to or below 0.05"; the verdict legend states that "ok" does not establish FDR ≤ 0.05. A confirmatory run on new seeds with pre-specified criteria was added (§5)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>label invariance of the covariate does not make regions exchangeable</td>
+<td>correct</td>
+<td>code and docs now separate the two: within-region exchangeability of label assignments is untouched; cross-region comparability is an empirical property, improved but not guaranteed. Low-depth <code>shift</code> excess is listed as a limitation, not as solved by the depth warning</td>
+</tr>
+<tr>
+<td>4</td>
+<td>numbers in the packet did not match the full v3 table</td>
+<td><strong>correct; our error</strong>. Three "v3" rows (width 400 bp, depth 5, high noise; 3 vs 3) had been copied from the v2.4-null table</td>
+<td>every table in this packet and in <code>PROFILESEG_CALIBRATION.md</code> is now generated from run JSON files by <code>benchmarks/profileseg_review_tables.py</code>; each run records commit, uncommitted-diff hash, regional.py hash, options, seeds and times (§4)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>ACAT is not an unconditional guarantee</td>
+<td>correct</td>
+<td><code>shape_any</code> is described as a Cauchy combination that is approximately valid through a tail approximation, with calibration checked by simulation (it is judged separately in the confirmatory run)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>absolute amplitude FWER 0.20 / 0.275 called "mildly liberal"</td>
+<td>correct: under a complete null FDR = FWER, so this is clear miscalibration; the share of false calls among exact-null regions does not offset it</td>
+<td>wording changed; per-region amplitude inference is not claimed until fixed, and the paper scope is the shape tests</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. What the reviewer is asked to check now</h2>
+<p>Round 3: whether the region-count boundary (§6a), the shift boundary (§6b), the <code>shape_any</code> real-data
+results (§7) and the replicate-structure argument (§7a) are read correctly, and whether the argument in
+§7a is strong enough to treat the yeast 1+2 vs 3+4 splits as invalid nulls.</p>
+<p>Round 2 questions (still open):</p>
+<ol>
+<li>Whether the corrected statements (§1) and the claims in §8 are supported by the generated tables.</li>
+<li>Whether the confirmatory run (§5) is adequate: criteria fixed beforehand, frozen code, new seeds;
+   whether criterion C3 (defined on 3000 regions, 1000 per class) is a fair choice given the known small-set failure.</li>
+<li>Whether reporting per-class calibration and per-class FDR separately (§6) is the right framing.</li>
+<li>Whether any remaining statement overreaches.</li>
+</ol>
+<h2>3. Method in one paragraph</h2>
+<p>ProfileSeg compares signal profiles around predefined anchors between two conditions with biological
+replicates. Shape tests use background-corrected, mass-normalised profiles: <code>shape_kernel</code> (an MMD-type
+kernel distance between condition means, scaled by within-condition spread plus a label-invariant s0),
+<code>shift</code> (a directional projection on the pooled template's derivative; effect size is a translation-model
+estimate in bp) and <code>shape_any</code> (per-region Cauchy combination of the two p-values, then one BH). With 2
+or 3 replicates per group there are only 3 or 10 label assignments, so per-region p-values come from a
+null pooled over regions × non-observed assignments. In v3 that pooling is done within quantile strata
+of each region's total spread (identical under every assignment) when ≥ 200 regions and ≥ 2000 null
+values per stratum are available. BH runs over all regions.</p>
+<h2>4. Runs and provenance</h2>
+<!-- gen:provenance -->
+<div class="table"><table>
+<thead>
+<tr>
+<th>run</th>
+<th>purpose</th>
+<th>seeds</th>
+<th>null</th>
+<th>FDR</th>
+<th>commit</th>
+<th>uncommitted src files</th>
+<th>regional.py sha256</th>
+<th>src diff sha256</th>
+<th>started → finished</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>confirm_v3</td>
+<td>confirmatory, v3 default (frozen)</td>
+<td>9100000+</td>
+<td>strata</td>
+<td>none</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T21:05:10 → 2026-10-26T21:17:20</td>
+</tr>
+<tr>
+<td>dev_fdr_depth</td>
+<td>development, depth FDR strata</td>
+<td>5000000+</td>
+<td>strata</td>
+<td>depth</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T21:01:48 → 2026-10-26T21:05:09</td>
+</tr>
+<tr>
+<td>dev_fdr_spread</td>
+<td>development, spread FDR strata</td>
+<td>5000000+</td>
+<td>strata</td>
+<td>spread</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T20:58:23 → 2026-10-26T21:01:46</td>
+</tr>
+<tr>
+<td>dev_v24</td>
+<td>development, v2.4 null</td>
+<td>5000000+</td>
+<td>none</td>
+<td>none</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T20:46:07 → 2026-10-26T20:58:22</td>
+</tr>
+<tr>
+<td>dev_v3</td>
+<td>development, v3 default</td>
+<td>5000000+</td>
+<td>strata</td>
+<td>none</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T20:33:37 → 2026-10-26T20:46:06</td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:provenance -->
+
+<p>Outputs: <code>benchmarks/results/calibration/&lt;run&gt;/calibration_boundary.json</code> and the Markdown generated in
+the same run. Development runs reuse seeds 5 000 000+, on which the v3 null was designed; they are
+development evidence only.</p>
+<h2>5. Whole-list FDR and the confirmatory run</h2>
+<!-- gen:wholelist -->
+<div class="table"><table>
+<thead>
+<tr>
+<th>run</th>
+<th>cells × tests judged</th>
+<th>ok</th>
+<th>WATCH</th>
+<th>EXCEEDS</th>
+<th>largest mean FDP</th>
+<th>largest CI upper bound</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dev_v3</td>
+<td>114</td>
+<td>114</td>
+<td>0</td>
+<td>0</td>
+<td>0.052</td>
+<td>0.059</td>
+</tr>
+<tr>
+<td>dev_v24</td>
+<td>114</td>
+<td>114</td>
+<td>0</td>
+<td>0</td>
+<td>0.052</td>
+<td>0.063</td>
+</tr>
+<tr>
+<td>confirm_v3</td>
+<td>114</td>
+<td>114</td>
+<td>0</td>
+<td>0</td>
+<td>0.049</td>
+<td>0.058</td>
+</tr>
+</tbody>
+</table></div>
+<p>Selected cells (FDP [95 % CI] / power; whole list):</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>factor</th>
+<th>level</th>
+<th>design</th>
+<th>run</th>
+<th>shape_kernel</th>
+<th>shift</th>
+<th>shape_any</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>width</td>
+<td>60</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.052 [0.046, 0.057] / 0.87</td>
+<td>0.034 [0.029, 0.040] / 0.48</td>
+<td>0.046 [0.041, 0.050] / 0.83</td>
+</tr>
+<tr>
+<td>width</td>
+<td>60</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.046 [0.041, 0.051] / 0.86</td>
+<td>0.034 [0.028, 0.039] / 0.48</td>
+<td>0.039 [0.035, 0.044] / 0.81</td>
+</tr>
+<tr>
+<td>width</td>
+<td>400</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.027 [0.015, 0.039] / 0.02</td>
+<td>0.011 [0.000, 0.024] / 0.00</td>
+<td>0.014 [0.004, 0.024] / 0.01</td>
+</tr>
+<tr>
+<td>width</td>
+<td>400</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.032 [0.017, 0.047] / 0.03</td>
+<td>0.000 [0.000, 0.000] / 0.00</td>
+<td>0.006 [0.000, 0.012] / 0.01</td>
+</tr>
+<tr>
+<td>depth</td>
+<td>5.0</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.037 [0.031, 0.044] / 0.26</td>
+<td>0.036 [0.025, 0.047] / 0.07</td>
+<td>0.030 [0.023, 0.037] / 0.22</td>
+</tr>
+<tr>
+<td>depth</td>
+<td>5.0</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.045 [0.037, 0.052] / 0.28</td>
+<td>0.043 [0.029, 0.057] / 0.07</td>
+<td>0.041 [0.034, 0.048] / 0.24</td>
+</tr>
+<tr>
+<td>noise</td>
+<td>high</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.036 [0.028, 0.043] / 0.18</td>
+<td>0.029 [0.014, 0.044] / 0.01</td>
+<td>0.034 [0.025, 0.042] / 0.14</td>
+</tr>
+<tr>
+<td>noise</td>
+<td>high</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.034 [0.026, 0.042] / 0.19</td>
+<td>0.026 [0.011, 0.040] / 0.02</td>
+<td>0.032 [0.024, 0.041] / 0.13</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.0</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.0</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.0</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.0</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.5</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.043 [0.040, 0.046] / 0.63</td>
+<td>0.030 [0.026, 0.033] / 0.32</td>
+<td>0.037 [0.034, 0.040] / 0.59</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.5</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.044 [0.040, 0.047] / 0.63</td>
+<td>0.031 [0.027, 0.035] / 0.31</td>
+<td>0.039 [0.036, 0.043] / 0.59</td>
+</tr>
+<tr>
+<td>correlation</td>
+<td>overlap</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.046 [0.041, 0.051] / 0.45</td>
+<td>0.043 [0.035, 0.051] / 0.23</td>
+<td>0.045 [0.039, 0.051] / 0.43</td>
+</tr>
+<tr>
+<td>correlation</td>
+<td>overlap</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.048 [0.042, 0.054] / 0.44</td>
+<td>0.045 [0.037, 0.053] / 0.22</td>
+<td>0.047 [0.041, 0.053] / 0.42</td>
+</tr>
+<tr>
+<td>batch</td>
+<td>balanced 15 bp</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.031 [0.027, 0.035] / 0.62</td>
+<td>0.029 [0.024, 0.034] / 0.36</td>
+<td>0.030 [0.026, 0.034] / 0.57</td>
+</tr>
+<tr>
+<td>batch</td>
+<td>balanced 15 bp</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.030 [0.026, 0.034] / 0.61</td>
+<td>0.027 [0.021, 0.032] / 0.35</td>
+<td>0.030 [0.025, 0.034] / 0.57</td>
+</tr>
+<tr>
+<td>semireal</td>
+<td>real noise</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.049 [0.043, 0.055] / 0.54</td>
+<td>0.038 [0.031, 0.045] / 0.42</td>
+<td>0.048 [0.042, 0.054] / 0.56</td>
+</tr>
+<tr>
+<td>semireal</td>
+<td>real noise</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.047 [0.039, 0.055] / 0.53</td>
+<td>0.042 [0.033, 0.051] / 0.42</td>
+<td>0.048 [0.040, 0.057] / 0.55</td>
+</tr>
+<tr>
+<td>mixed_large</td>
+<td>3 classes × 1000</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.045 [0.042, 0.049] / 0.32</td>
+<td>0.037 [0.032, 0.042] / 0.14</td>
+<td>0.040 [0.036, 0.043] / 0.29</td>
+</tr>
+<tr>
+<td>mixed_large</td>
+<td>3 classes × 1000</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.044 [0.041, 0.048] / 0.32</td>
+<td>0.034 [0.029, 0.038] / 0.13</td>
+<td>0.037 [0.034, 0.040] / 0.28</td>
+</tr>
+<tr>
+<td>mixed_large</td>
+<td>3 classes × 1000</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.045 [0.042, 0.047] / 0.44</td>
+<td>0.042 [0.038, 0.045] / 0.19</td>
+<td>0.043 [0.040, 0.046] / 0.41</td>
+</tr>
+<tr>
+<td>mixed_large</td>
+<td>3 classes × 1000</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.046 [0.043, 0.048] / 0.44</td>
+<td>0.039 [0.036, 0.043] / 0.19</td>
+<td>0.043 [0.040, 0.046] / 0.41</td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:wholelist -->
+
+<p>Confirmatory criteria, fixed before the run (<code>docs/PROFILESEG_CALIBRATION.md</code> §6): C1 no EXCEEDS in any
+whole-list cell; C2 complete null ≤ 5 of 100 runs with any call; C3 in <code>mixed_large</code>, p01 within
+[0.007, 0.014] for <code>shape_kernel</code> and <code>shape_any</code> in every class, ≤ 0.015 for <code>shift</code>.</p>
+<!-- gen:confirm -->
+<div class="table"><table>
+<thead>
+<tr>
+<th>criterion</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C1 whole list: no EXCEEDS</td>
+<td><strong>pass</strong></td>
+</tr>
+<tr>
+<td>C2 complete null: ≤ 5 of 100 runs with any call</td>
+<td><strong>pass</strong></td>
+</tr>
+<tr>
+<td>C3 per-class tails (mixed_large): p01 in [0.007, 0.014] (shape_kernel, shape_any), ≤ 0.015 (shift)</td>
+<td><strong>pass</strong></td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:confirm -->
+
+<p>Interpretation: in the scenarios tested, whole-list FDR estimates are close to or below 0.05 with no
+clear exceedance, reproduced on new seeds. This is empirical support, not a proven bound.</p>
+<h2>6. Per-class calibration and per-class FDR</h2>
+<!-- gen:perclass -->
+<p>Share of <strong>unchanged</strong> regions with p &lt; 0.01 (nominal 0.01), mixed designs:</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>design</th>
+<th>class</th>
+<th>test</th>
+<th>v2.4 null (dev)</th>
+<th>v3 null (dev)</th>
+<th>v3 null (confirmatory)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mixed 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_kernel</td>
+<td>0.0225</td>
+<td>0.0225</td>
+<td>0.0257</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shift</td>
+<td>0.0023</td>
+<td>0.0023</td>
+<td>0.0029</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_any</td>
+<td>0.0131</td>
+<td>0.0131</td>
+<td>0.0136</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_kernel</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shift</td>
+<td>0.0109</td>
+<td>0.0109</td>
+<td>0.0109</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_any</td>
+<td>0.0054</td>
+<td>0.0054</td>
+<td>0.0041</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>low depth</td>
+<td>shape_kernel</td>
+<td>0.0123</td>
+<td>0.0123</td>
+<td>0.0129</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>low depth</td>
+<td>shift</td>
+<td>0.0174</td>
+<td>0.0174</td>
+<td>0.0169</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>low depth</td>
+<td>shape_any</td>
+<td>0.0152</td>
+<td>0.0152</td>
+<td>0.0146</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_kernel</td>
+<td>0.0206</td>
+<td>0.0181</td>
+<td>0.0164</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shift</td>
+<td>0.0010</td>
+<td>0.0060</td>
+<td>0.0054</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_any</td>
+<td>0.0109</td>
+<td>0.0124</td>
+<td>0.0114</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_kernel</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0001</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shift</td>
+<td>0.0115</td>
+<td>0.0117</td>
+<td>0.0111</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_any</td>
+<td>0.0053</td>
+<td>0.0054</td>
+<td>0.0059</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>low depth</td>
+<td>shape_kernel</td>
+<td>0.0120</td>
+<td>0.0186</td>
+<td>0.0161</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>low depth</td>
+<td>shift</td>
+<td>0.0156</td>
+<td>0.0115</td>
+<td>0.0144</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>low depth</td>
+<td>shape_any</td>
+<td>0.0136</td>
+<td>0.0152</td>
+<td>0.0156</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_kernel</td>
+<td>0.0233</td>
+<td>0.0145</td>
+<td>0.0138</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shift</td>
+<td>0.0030</td>
+<td>0.0077</td>
+<td>0.0075</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_any</td>
+<td>0.0136</td>
+<td>0.0115</td>
+<td>0.0102</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_kernel</td>
+<td>0.0000</td>
+<td>0.0089</td>
+<td>0.0097</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shift</td>
+<td>0.0114</td>
+<td>0.0109</td>
+<td>0.0113</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_any</td>
+<td>0.0053</td>
+<td>0.0093</td>
+<td>0.0099</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>low depth</td>
+<td>shape_kernel</td>
+<td>0.0125</td>
+<td>0.0115</td>
+<td>0.0133</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>low depth</td>
+<td>shift</td>
+<td>0.0174</td>
+<td>0.0132</td>
+<td>0.0126</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>low depth</td>
+<td>shape_any</td>
+<td>0.0160</td>
+<td>0.0126</td>
+<td>0.0128</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_kernel</td>
+<td>0.0207</td>
+<td>0.0125</td>
+<td>0.0132</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shift</td>
+<td>0.0016</td>
+<td>0.0097</td>
+<td>0.0098</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_any</td>
+<td>0.0115</td>
+<td>0.0120</td>
+<td>0.0115</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_kernel</td>
+<td>0.0000</td>
+<td>0.0096</td>
+<td>0.0101</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shift</td>
+<td>0.0127</td>
+<td>0.0110</td>
+<td>0.0108</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_any</td>
+<td>0.0056</td>
+<td>0.0103</td>
+<td>0.0105</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>low depth</td>
+<td>shape_kernel</td>
+<td>0.0116</td>
+<td>0.0117</td>
+<td>0.0115</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>low depth</td>
+<td>shift</td>
+<td>0.0162</td>
+<td>0.0117</td>
+<td>0.0108</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>low depth</td>
+<td>shape_any</td>
+<td>0.0146</td>
+<td>0.0120</td>
+<td>0.0114</td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:perclass -->
+
+<ul>
+<li>With 3000 regions (<code>mixed_large</code>) the v3 null brings every class and test to 0.75–1.45× nominal (v2.4: 0–2.3×); the region-count boundary is in §6a.</li>
+<li>With 600 regions it cannot help at 2 vs 2 (no strata; identical to v2.4: narrow <code>shape_kernel</code>
+  2.2–2.6×) and only partly at 3 vs 3 (low-depth and narrow <code>shape_kernel</code> 1.6–1.9×). <strong>Small region sets
+  remain miscalibrated per class</strong>; this reproduces in the confirmatory run.</li>
+</ul>
+<!-- gen:fdrstrata -->
+<p>Class FDP (mean over runs) and whole-list FDP [95 % CI], <code>mixed_large</code>, by FDR strata:</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>design</th>
+<th>FDR strata</th>
+<th>test</th>
+<th>narrow</th>
+<th>broad</th>
+<th>low depth</th>
+<th>whole list</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2v2</td>
+<td>none (global BH)</td>
+<td>shape_kernel</td>
+<td>0.025</td>
+<td>0.222</td>
+<td>0.090</td>
+<td>0.045 [0.042, 0.049] / 0.32</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>none (global BH)</td>
+<td>shift</td>
+<td>0.010</td>
+<td>0.330</td>
+<td>0.165</td>
+<td>0.037 [0.032, 0.042] / 0.14</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>none (global BH)</td>
+<td>shape_any</td>
+<td>0.017</td>
+<td>0.256</td>
+<td>0.103</td>
+<td>0.040 [0.036, 0.043] / 0.29</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>spread</td>
+<td>shape_kernel</td>
+<td>0.048</td>
+<td>0.008</td>
+<td>0.108</td>
+<td>0.059 [0.055, 0.062] / 0.34</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>spread</td>
+<td>shift</td>
+<td>0.018</td>
+<td>0.000</td>
+<td>0.143</td>
+<td>0.032 [0.029, 0.036] / 0.16</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>spread</td>
+<td>shape_any</td>
+<td>0.036</td>
+<td>0.000</td>
+<td>0.110</td>
+<td>0.048 [0.044, 0.051] / 0.32</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>depth</td>
+<td>shape_kernel</td>
+<td>0.034</td>
+<td>0.260</td>
+<td>0.083</td>
+<td>0.052 [0.048, 0.056] / 0.31</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>depth</td>
+<td>shift</td>
+<td>0.015</td>
+<td>0.364</td>
+<td>0.131</td>
+<td>0.034 [0.030, 0.038] / 0.14</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>depth</td>
+<td>shape_any</td>
+<td>0.024</td>
+<td>0.291</td>
+<td>0.104</td>
+<td>0.041 [0.038, 0.045] / 0.27</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>none (global BH)</td>
+<td>shape_kernel</td>
+<td>0.024</td>
+<td>0.211</td>
+<td>0.060</td>
+<td>0.045 [0.042, 0.047] / 0.44</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>none (global BH)</td>
+<td>shift</td>
+<td>0.015</td>
+<td>0.343</td>
+<td>0.104</td>
+<td>0.042 [0.038, 0.045] / 0.19</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>none (global BH)</td>
+<td>shape_any</td>
+<td>0.021</td>
+<td>0.234</td>
+<td>0.062</td>
+<td>0.043 [0.040, 0.046] / 0.41</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>spread</td>
+<td>shape_kernel</td>
+<td>0.039</td>
+<td>0.014</td>
+<td>0.059</td>
+<td>0.044 [0.041, 0.046] / 0.43</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>spread</td>
+<td>shift</td>
+<td>0.023</td>
+<td>0.000</td>
+<td>0.085</td>
+<td>0.033 [0.029, 0.036] / 0.19</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>spread</td>
+<td>shape_any</td>
+<td>0.034</td>
+<td>0.000</td>
+<td>0.067</td>
+<td>0.041 [0.038, 0.044] / 0.40</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>depth</td>
+<td>shape_kernel</td>
+<td>0.030</td>
+<td>0.208</td>
+<td>0.056</td>
+<td>0.046 [0.043, 0.048] / 0.43</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>depth</td>
+<td>shift</td>
+<td>0.022</td>
+<td>0.330</td>
+<td>0.077</td>
+<td>0.040 [0.037, 0.044] / 0.18</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>depth</td>
+<td>shape_any</td>
+<td>0.028</td>
+<td>0.220</td>
+<td>0.056</td>
+<td>0.044 [0.042, 0.047] / 0.40</td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:fdrstrata -->
+
+<p>Calibrated p-values do not give per-class FDR: the broad class (power ≤ 0.06) has class FDP 0.21–0.34
+under global BH. Spread strata fix that class and raise the whole-list FDP (0.059 at 2 vs 2 for
+<code>shape_kernel</code>); depth strata change little here. A user who will read a predefined low-power subgroup on
+its own needs strata matching that subgroup and gives up the combined-list guarantee.</p>
+<h3>6a. Region-count boundary (review round 2, point 1)</h3>
+<p>Mixed design (narrow / broad / low depth, one third each) at 600–6000 regions in total, 100 runs per
+cell, development seeds; share of unchanged regions with p &lt; 0.01 (nominal 0.01), v2.4 null → v3 null.
+Source: <code>benchmarks/results/round3/mixed_n_v3</code>, <code>mixed_n_v24</code>.</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>design</th>
+<th>regions (total)</th>
+<th>test</th>
+<th>narrow</th>
+<th>broad</th>
+<th>low depth</th>
+<th>whole-list FDP [CI] / power (v3)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2v2</td>
+<td>600</td>
+<td>shape_kernel</td>
+<td>0.022 → 0.022</td>
+<td>0.000 → 0.000</td>
+<td>0.012 → 0.012</td>
+<td>0.044 [0.037, 0.052] / 0.33</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>600</td>
+<td>shift</td>
+<td>0.002 → 0.002</td>
+<td>0.012 → 0.012</td>
+<td>0.017 → 0.017</td>
+<td>0.034 [0.025, 0.043] / 0.15</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>600</td>
+<td>shape_any</td>
+<td>0.012 → 0.012</td>
+<td>0.005 → 0.005</td>
+<td>0.016 → 0.016</td>
+<td>0.035 [0.028, 0.042] / 0.30</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>1000</td>
+<td>shape_kernel</td>
+<td>0.022 → 0.022</td>
+<td>0.000 → 0.000</td>
+<td>0.013 → 0.013</td>
+<td>0.048 [0.042, 0.054] / 0.34</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>1000</td>
+<td>shift</td>
+<td>0.003 → 0.003</td>
+<td>0.011 → 0.011</td>
+<td>0.016 → 0.016</td>
+<td>0.035 [0.028, 0.042] / 0.16</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>1000</td>
+<td>shape_any</td>
+<td>0.013 → 0.013</td>
+<td>0.005 → 0.005</td>
+<td>0.016 → 0.016</td>
+<td>0.042 [0.036, 0.048] / 0.32</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>1500</td>
+<td>shape_kernel</td>
+<td>0.023 → 0.023</td>
+<td>0.000 → 0.000</td>
+<td>0.013 → 0.013</td>
+<td>0.048 [0.042, 0.053] / 0.34</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>1500</td>
+<td>shift</td>
+<td>0.003 → 0.003</td>
+<td>0.011 → 0.011</td>
+<td>0.018 → 0.018</td>
+<td>0.037 [0.031, 0.043] / 0.17</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>1500</td>
+<td>shape_any</td>
+<td>0.013 → 0.013</td>
+<td>0.005 → 0.005</td>
+<td>0.016 → 0.016</td>
+<td>0.041 [0.036, 0.045] / 0.32</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>2000</td>
+<td>shape_kernel</td>
+<td>0.023 → 0.023</td>
+<td>0.000 → 0.000</td>
+<td>0.013 → 0.013</td>
+<td>0.046 [0.041, 0.050] / 0.34</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>2000</td>
+<td>shift</td>
+<td>0.003 → 0.003</td>
+<td>0.011 → 0.011</td>
+<td>0.016 → 0.016</td>
+<td>0.039 [0.034, 0.044] / 0.16</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>2000</td>
+<td>shape_any</td>
+<td>0.013 → 0.013</td>
+<td>0.005 → 0.005</td>
+<td>0.016 → 0.016</td>
+<td>0.041 [0.037, 0.045] / 0.33</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>3000</td>
+<td>shape_kernel</td>
+<td>0.022 → 0.014</td>
+<td>0.000 → 0.008</td>
+<td>0.013 → 0.012</td>
+<td>0.041 [0.038, 0.044] / 0.32</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>3000</td>
+<td>shift</td>
+<td>0.003 → 0.008</td>
+<td>0.011 → 0.011</td>
+<td>0.017 → 0.013</td>
+<td>0.035 [0.029, 0.040] / 0.13</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>3000</td>
+<td>shape_any</td>
+<td>0.013 → 0.011</td>
+<td>0.005 → 0.009</td>
+<td>0.015 → 0.012</td>
+<td>0.037 [0.033, 0.041] / 0.28</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>6000</td>
+<td>shape_kernel</td>
+<td>0.023 → 0.013</td>
+<td>0.000 → 0.010</td>
+<td>0.013 → 0.012</td>
+<td>0.043 [0.041, 0.045] / 0.31</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>6000</td>
+<td>shift</td>
+<td>0.003 → 0.010</td>
+<td>0.011 → 0.011</td>
+<td>0.017 → 0.012</td>
+<td>0.037 [0.034, 0.041] / 0.12</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>6000</td>
+<td>shape_any</td>
+<td>0.013 → 0.012</td>
+<td>0.005 → 0.010</td>
+<td>0.016 → 0.012</td>
+<td>0.040 [0.037, 0.042] / 0.27</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>600</td>
+<td>shape_kernel</td>
+<td>0.019 → 0.016</td>
+<td>0.000 → 0.000</td>
+<td>0.010 → 0.015</td>
+<td>0.040 [0.035, 0.045] / 0.42</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>600</td>
+<td>shift</td>
+<td>0.002 → 0.006</td>
+<td>0.010 → 0.010</td>
+<td>0.015 → 0.013</td>
+<td>0.034 [0.026, 0.041] / 0.22</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>600</td>
+<td>shape_any</td>
+<td>0.010 → 0.011</td>
+<td>0.004 → 0.004</td>
+<td>0.013 → 0.014</td>
+<td>0.040 [0.035, 0.045] / 0.41</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>1000</td>
+<td>shape_kernel</td>
+<td>0.020 → 0.014</td>
+<td>0.000 → 0.007</td>
+<td>0.012 → 0.012</td>
+<td>0.041 [0.037, 0.045] / 0.43</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>1000</td>
+<td>shift</td>
+<td>0.001 → 0.008</td>
+<td>0.012 → 0.012</td>
+<td>0.016 → 0.012</td>
+<td>0.044 [0.037, 0.051] / 0.20</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>1000</td>
+<td>shape_any</td>
+<td>0.011 → 0.012</td>
+<td>0.006 → 0.010</td>
+<td>0.015 → 0.012</td>
+<td>0.043 [0.038, 0.048] / 0.41</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>1500</td>
+<td>shape_kernel</td>
+<td>0.020 → 0.012</td>
+<td>0.000 → 0.010</td>
+<td>0.011 → 0.011</td>
+<td>0.048 [0.045, 0.052] / 0.45</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>1500</td>
+<td>shift</td>
+<td>0.002 → 0.009</td>
+<td>0.012 → 0.010</td>
+<td>0.015 → 0.012</td>
+<td>0.040 [0.035, 0.045] / 0.19</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>1500</td>
+<td>shape_any</td>
+<td>0.011 → 0.012</td>
+<td>0.006 → 0.011</td>
+<td>0.015 → 0.012</td>
+<td>0.044 [0.040, 0.047] / 0.42</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>2000</td>
+<td>shape_kernel</td>
+<td>0.019 → 0.012</td>
+<td>0.000 → 0.008</td>
+<td>0.012 → 0.013</td>
+<td>0.045 [0.041, 0.048] / 0.44</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>2000</td>
+<td>shift</td>
+<td>0.001 → 0.009</td>
+<td>0.011 → 0.011</td>
+<td>0.017 → 0.012</td>
+<td>0.039 [0.035, 0.043] / 0.19</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>2000</td>
+<td>shape_any</td>
+<td>0.011 → 0.011</td>
+<td>0.006 → 0.009</td>
+<td>0.016 → 0.013</td>
+<td>0.042 [0.039, 0.045] / 0.41</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>3000</td>
+<td>shape_kernel</td>
+<td>0.019 → 0.012</td>
+<td>0.000 → 0.010</td>
+<td>0.012 → 0.012</td>
+<td>0.044 [0.042, 0.047] / 0.44</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>3000</td>
+<td>shift</td>
+<td>0.002 → 0.010</td>
+<td>0.012 → 0.011</td>
+<td>0.015 → 0.011</td>
+<td>0.040 [0.037, 0.044] / 0.19</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>3000</td>
+<td>shape_any</td>
+<td>0.011 → 0.011</td>
+<td>0.005 → 0.011</td>
+<td>0.014 → 0.012</td>
+<td>0.042 [0.040, 0.045] / 0.41</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>6000</td>
+<td>shape_kernel</td>
+<td>0.019 → 0.012</td>
+<td>0.000 → 0.010</td>
+<td>0.011 → 0.011</td>
+<td>0.045 [0.043, 0.046] / 0.45</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>6000</td>
+<td>shift</td>
+<td>0.002 → 0.009</td>
+<td>0.012 → 0.011</td>
+<td>0.016 → 0.011</td>
+<td>0.042 [0.039, 0.045] / 0.19</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>6000</td>
+<td>shape_any</td>
+<td>0.011 → 0.012</td>
+<td>0.006 → 0.010</td>
+<td>0.014 → 0.011</td>
+<td>0.044 [0.042, 0.046] / 0.42</td>
+</tr>
+</tbody>
+</table></div>
+<p>At 2 vs 2 nothing changes up to 2000 regions (fewer than 2000 testable: no strata); at 3 vs 3 the
+improvement starts at 1000. Whole-list FDP stays at or below 0.048 (CI upper bound ≤ 0.054) everywhere.</p>
+<h3>6b. Shift size × peak shape (review round 2, point 5)</h3>
+<p>20 % of 600 regions translated by d bp; 30 runs per cell; seeds 9 300 000+. Source:
+<code>benchmarks/results/round3/shift</code> (all d from 10 to 200 bp there; FDP ≤ 0.064 in every cell).</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>shape</th>
+<th>design</th>
+<th>d (bp)</th>
+<th>power: shift / shape_kernel / shape_any</th>
+<th>estimate ÷ true: all translated · called</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gauss60</td>
+<td>2v2</td>
+<td>20</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.98 · 2.08</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>2v2</td>
+<td>50</td>
+<td>0.66 / 0.66 / 0.73</td>
+<td>0.97 · 1.05</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>2v2</td>
+<td>100</td>
+<td>0.97 / 1.00 / 1.00</td>
+<td>0.88 · 0.88</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>2v2</td>
+<td>150</td>
+<td>0.78 / 1.00 / 1.00</td>
+<td>0.18 · 0.32</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>2v2</td>
+<td>200</td>
+<td>0.32 / 1.00 / 1.00</td>
+<td>-0.10 · 0.14</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>20</td>
+<td>0.01 / 0.01 / 0.01</td>
+<td>1.00 · 1.85</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>50</td>
+<td>0.85 / 0.87 / 0.89</td>
+<td>0.97 · 1.01</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>100</td>
+<td>1.00 / 1.00 / 1.00</td>
+<td>0.82 · 0.82</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.85 / 1.00 / 1.00</td>
+<td>0.12 · 0.15</td>
+</tr>
+<tr>
+<td>gauss60</td>
+<td>3v3</td>
+<td>200</td>
+<td>0.39 / 1.00 / 1.00</td>
+<td>-0.08 · 0.06</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>2v2</td>
+<td>20</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.94 · nan</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>2v2</td>
+<td>50</td>
+<td>0.02 / 0.05 / 0.02</td>
+<td>0.96 · 1.31</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>2v2</td>
+<td>100</td>
+<td>0.59 / 0.76 / 0.78</td>
+<td>0.97 · 1.04</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>2v2</td>
+<td>150</td>
+<td>0.89 / 0.97 / 0.98</td>
+<td>0.98 · 0.99</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>2v2</td>
+<td>200</td>
+<td>0.95 / 0.99 / 1.00</td>
+<td>0.97 · 0.97</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>3v3</td>
+<td>20</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.95 · nan</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>3v3</td>
+<td>50</td>
+<td>0.05 / 0.17 / 0.14</td>
+<td>0.96 · 1.38</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>3v3</td>
+<td>100</td>
+<td>0.81 / 0.92 / 0.93</td>
+<td>0.99 · 1.01</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.97 / 1.00 / 1.00</td>
+<td>0.99 · 0.99</td>
+</tr>
+<tr>
+<td>gauss150</td>
+<td>3v3</td>
+<td>200</td>
+<td>0.99 / 1.00 / 1.00</td>
+<td>0.97 · 0.97</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>2v2</td>
+<td>20</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.56 · nan</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>2v2</td>
+<td>50</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.62 · nan</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>2v2</td>
+<td>100</td>
+<td>0.00 / 0.02 / 0.00</td>
+<td>0.66 · nan</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>2v2</td>
+<td>150</td>
+<td>0.04 / 0.30 / 0.23</td>
+<td>0.72 · 1.01</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>2v2</td>
+<td>200</td>
+<td>0.16 / 0.68 / 0.63</td>
+<td>0.78 · 0.94</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>3v3</td>
+<td>20</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.71 · nan</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>3v3</td>
+<td>50</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.75 · nan</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>3v3</td>
+<td>100</td>
+<td>0.02 / 0.11 / 0.09</td>
+<td>0.78 · 1.01</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.18 / 0.57 / 0.53</td>
+<td>0.82 · 1.00</td>
+</tr>
+<tr>
+<td>gauss400</td>
+<td>3v3</td>
+<td>200</td>
+<td>0.40 / 0.87 / 0.83</td>
+<td>0.86 · 0.94</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>2v2</td>
+<td>20</td>
+<td>0.01 / 0.00 / 0.00</td>
+<td>0.78 · 1.42</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>2v2</td>
+<td>50</td>
+<td>0.78 / 0.38 / 0.77</td>
+<td>0.81 · 0.85</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>2v2</td>
+<td>100</td>
+<td>0.99 / 1.00 / 1.00</td>
+<td>0.86 · 0.86</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>2v2</td>
+<td>150</td>
+<td>0.64 / 1.00 / 1.00</td>
+<td>0.82 · 0.80</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>2v2</td>
+<td>200</td>
+<td>0.02 / 1.00 / 1.00</td>
+<td>0.36 · 0.39</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>20</td>
+<td>0.01 / 0.00 / 0.00</td>
+<td>0.77 · 0.90</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>50</td>
+<td>0.93 / 0.79 / 0.94</td>
+<td>0.83 · 0.84</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>100</td>
+<td>1.00 / 1.00 / 1.00</td>
+<td>0.87 · 0.87</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.78 / 1.00 / 1.00</td>
+<td>0.77 · 0.78</td>
+</tr>
+<tr>
+<td>bimodal</td>
+<td>3v3</td>
+<td>200</td>
+<td>0.06 / 1.00 / 1.00</td>
+<td>0.43 · 0.40</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>2v2</td>
+<td>20</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.69 · nan</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>2v2</td>
+<td>50</td>
+<td>0.04 / 0.01 / 0.02</td>
+<td>0.77 · 1.06</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>2v2</td>
+<td>100</td>
+<td>0.59 / 0.61 / 0.72</td>
+<td>0.83 · 0.89</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>2v2</td>
+<td>150</td>
+<td>0.68 / 0.91 / 0.93</td>
+<td>0.87 · 0.90</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>2v2</td>
+<td>200</td>
+<td>0.48 / 0.97 / 0.96</td>
+<td>0.86 · 0.91</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>20</td>
+<td>0.00 / 0.00 / 0.00</td>
+<td>0.78 · nan</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>50</td>
+<td>0.16 / 0.10 / 0.16</td>
+<td>0.81 · 1.00</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>100</td>
+<td>0.80 / 0.89 / 0.91</td>
+<td>0.85 · 0.87</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>150</td>
+<td>0.83 / 0.99 / 0.99</td>
+<td>0.88 · 0.90</td>
+</tr>
+<tr>
+<td>real_GSE112560</td>
+<td>3v3</td>
+<td>200</td>
+<td>0.62 / 0.99 / 0.99</td>
+<td>0.81 · 0.88</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. Real data with the v3 null</h2>
+<p>In-silico insertion on real replicates (<code>benchmarks/profileseg_insertion.py</code>; 20 % of regions changed,
+BH 5 %), rerun with the code identified in §4; output and provenance in
+<code>benchmarks/results/insertion_v3/</code>.</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>data</th>
+<th>test</th>
+<th>null: share called / FWER</th>
+<th>amplitude-only: share called</th>
+<th>shift 20 bp</th>
+<th>shift 50 bp</th>
+<th>shift 100 bp</th>
+<th>broaden ×1.3</th>
+<th>broaden ×1.5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>yeast 2 vs 2</td>
+<td>shape_kernel</td>
+<td>0.0167 / 0.17</td>
+<td>0.0160</td>
+<td>0.10 / 0.125</td>
+<td>0.77 / 0.110</td>
+<td>0.98 / 0.111</td>
+<td>0.98 / 0.119</td>
+<td>0.96 / 0.123</td>
+</tr>
+<tr>
+<td>yeast 2 vs 2</td>
+<td>shift</td>
+<td>0.0000 / 0.00</td>
+<td>0.0000</td>
+<td>1.00 / 0.051</td>
+<td>0.88 / 0.051</td>
+<td>0.34 / 0.054</td>
+<td>0.20 / 0.046</td>
+<td>0.21 / 0.045</td>
+</tr>
+<tr>
+<td>yeast 2 vs 2</td>
+<td>shape_any</td>
+<td>0.0080 / 0.11</td>
+<td>0.0050</td>
+<td>1.00 / 0.099</td>
+<td>0.93 / 0.099</td>
+<td>0.97 / 0.101</td>
+<td>0.98 / 0.106</td>
+<td>0.96 / 0.111</td>
+</tr>
+<tr>
+<td>PRO-seq 3 vs 3</td>
+<td>shape_kernel</td>
+<td>0.0000 / 0.00</td>
+<td>0.0000</td>
+<td>0.36 / 0.010</td>
+<td>0.91 / 0.013</td>
+<td>0.99 / 0.014</td>
+<td>0.12 / 0.005</td>
+<td>0.40 / 0.007</td>
+</tr>
+<tr>
+<td>PRO-seq 3 vs 3</td>
+<td>shift</td>
+<td>0.0000 / 0.00</td>
+<td>0.0000</td>
+<td>0.96 / 0.017</td>
+<td>1.00 / 0.016</td>
+<td>0.35 / 0.015</td>
+<td>0.21 / 0.012</td>
+<td>0.44 / 0.015</td>
+</tr>
+<tr>
+<td>PRO-seq 3 vs 3</td>
+<td>shape_any</td>
+<td>0.0000 / 0.00</td>
+<td>0.0000</td>
+<td>0.94 / 0.015</td>
+<td>1.00 / 0.014</td>
+<td>0.99 / 0.015</td>
+<td>0.23 / 0.008</td>
+<td>0.52 / 0.014</td>
+</tr>
+</tbody>
+</table></div>
+<p>Source: <code>benchmarks/results/round3/insertion</code> (provenance in <code>insertion.json</code>; per-run records in
+<code>insertion_runs.json</code>). PRO-seq 3 vs 3: no calls under real nulls, FDP ≤ 0.017 for all three tests.
+Yeast 2 vs 2 over all 18 splits: <code>shape_kernel</code> FDP 0.110–0.125, <code>shape_any</code> 0.099–0.111, <code>shift</code>
+0.045–0.054. Real-null splits reuse the same replicates and are not independent validations.</p>
+<h3>7a. Where the yeast excess comes from</h3>
+<div class="table"><table>
+<thead>
+<tr>
+<th>genotype</th>
+<th>split</th>
+<th>pairing ratio</th>
+<th>shape_kernel null calls</th>
+<th>shape_any null calls</th>
+<th>shift null calls</th>
+<th>FDP kernel / any / shift</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WT</td>
+<td>1+2 vs rest</td>
+<td>0.96</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.081 / 0.059 / 0.050</td>
+</tr>
+<tr>
+<td>WT</td>
+<td>1+3 vs rest</td>
+<td>0.93</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.026 / 0.046 / 0.055</td>
+</tr>
+<tr>
+<td>WT</td>
+<td>1+4 vs rest</td>
+<td>1.13</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.047 / 0.033 / 0.025</td>
+</tr>
+<tr>
+<td>dKO</td>
+<td>1+2 vs rest</td>
+<td>1.44</td>
+<td>8.68 %</td>
+<td>5.54 %</td>
+<td>0.00 %</td>
+<td>0.521 / 0.397 / 0.118</td>
+</tr>
+<tr>
+<td>dKO</td>
+<td>1+3 vs rest</td>
+<td>0.86</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.000 / 0.015 / 0.040</td>
+</tr>
+<tr>
+<td>dKO</td>
+<td>1+4 vs rest</td>
+<td>0.83</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.000 / 0.012 / 0.010</td>
+</tr>
+<tr>
+<td>rtf1-8-9A</td>
+<td>1+2 vs rest</td>
+<td>0.96</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.033 / 0.060 / 0.063</td>
+</tr>
+<tr>
+<td>rtf1-8-9A</td>
+<td>1+3 vs rest</td>
+<td>1.01</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.053 / 0.039 / 0.031</td>
+</tr>
+<tr>
+<td>rtf1-8-9A</td>
+<td>1+4 vs rest</td>
+<td>1.03</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.031 / 0.033 / 0.027</td>
+</tr>
+<tr>
+<td>rtf1-11A</td>
+<td>1+2 vs rest</td>
+<td>1.56</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.224 / 0.209 / 0.158</td>
+</tr>
+<tr>
+<td>rtf1-11A</td>
+<td>1+3 vs rest</td>
+<td>0.82</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.008 / 0.019 / 0.030</td>
+</tr>
+<tr>
+<td>rtf1-11A</td>
+<td>1+4 vs rest</td>
+<td>0.82</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.004 / 0.008 / 0.011</td>
+</tr>
+<tr>
+<td>rtf1</td>
+<td>1+2 vs rest</td>
+<td>1.66</td>
+<td>3.14 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.488 / 0.363 / 0.100</td>
+</tr>
+<tr>
+<td>rtf1</td>
+<td>1+3 vs rest</td>
+<td>0.81</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.003 / 0.018 / 0.022</td>
+</tr>
+<tr>
+<td>rtf1</td>
+<td>1+4 vs rest</td>
+<td>0.79</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.000 / 0.006 / 0.014</td>
+</tr>
+<tr>
+<td>isw1rtf1</td>
+<td>1+2 vs rest</td>
+<td>2.28</td>
+<td>18.28 %</td>
+<td>8.80 %</td>
+<td>0.00 %</td>
+<td>0.602 / 0.515 / 0.097</td>
+</tr>
+<tr>
+<td>isw1rtf1</td>
+<td>1+3 vs rest</td>
+<td>0.72</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.000 / 0.014 / 0.018</td>
+</tr>
+<tr>
+<td>isw1rtf1</td>
+<td>1+4 vs rest</td>
+<td>0.72</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.00 %</td>
+<td>0.000 / 0.014 / 0.018</td>
+</tr>
+</tbody>
+</table></div>
+<p>Splits with pairing ratio &gt; 1.2: 4 of 18; their mean <code>shape_kernel</code> FDP 0.459, null calls in 3 of them. Other splits: mean FDP 0.020, null calls in 0 of 14. Spearman (ratio, FDP) = 0.91.</p>
+<p>Reading (amended in round 4): the excess calls are associated with replicate structure; the cause is undetermined.
+The ratio is an aggregate between-group statistic on the same data, so the association is not independent
+evidence about the null (see §0b for a held-out-region check); but the ratio and the 1.2 cut-off were chosen
+after seeing the results, the origin of the pair structure is unknown, and a user with such structure
+and no batch annotation would get these calls. A label-free replicate-structure diagnostic in the
+output is a proposed addition (§9).</p>
+<h2>8. Claims</h2>
+<div class="table"><table>
+<thead>
+<tr>
+<th>claim</th>
+<th>status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>whole-list FDR near or below 0.05 across width, depth, noise, share changed, overlap, balanced artefact, real noise (2 and 3 replicates)</td>
+<td>supported empirically, reproduced on new seeds; not a proven bound</td>
+</tr>
+<tr>
+<td>per-class tail calibration within the pre-specified tolerance (≤ ~1.5×)</td>
+<td>supported at 3000 regions (2 vs 2 and 3 vs 3) and from 1000 regions at 3 vs 3; at 2 vs 2 not below ~2000 testable regions (§6a)</td>
+</tr>
+<tr>
+<td>per-class calibration with a few hundred regions</td>
+<td><strong>not supported</strong> (2.2–2.6× liberal for narrow peaks at 2 vs 2)</td>
+</tr>
+<tr>
+<td>FDR within a subgroup under global BH</td>
+<td><strong>not supported</strong>; stratified BH targets it within matching strata and loses the combined-list level</td>
+</tr>
+<tr>
+<td>exact permutation validity across regions</td>
+<td>not claimed</td>
+</tr>
+<tr>
+<td><code>shape_any</code> calibration</td>
+<td>supported in simulation and on PRO-seq; on yeast it inherits the excess of the structured splits; ACAT validity is approximate</td>
+</tr>
+<tr>
+<td>per-region absolute amplitude</td>
+<td><strong>miscalibrated</strong> under complete nulls in two designs (FWER = FDR 0.20, 0.275); not claimed</td>
+</tr>
+<tr>
+<td>translation estimate (bp; cross-correlation since round 4; a consistency-checked matching shift between the two mean profiles, not a mechanism)</td>
+<td>for consistent calls on translated regions: direction correct in every evaluated cell; median estimate ÷ true 0.94–1.03 away from the detection limit; biased upwards (1.16–1.5×) near it (selection); the earlier template fit failed beyond ~2 peak widths</td>
+</tr>
+<tr>
+<td><code>translation_consistent</code> identifies translations</td>
+<td><strong>not supported</strong>: a fit-consistency flag; one-sided gains that reach significance pass it; a stricter R² cut was evaluated and rejected (§0b)</td>
+</tr>
+<tr>
+<td>more sensitive than edgeR diffSplice</td>
+<td>pre-specified primary analysis met for 50 bp (sd 60) and 100 bp (sd 150) translations at BH 5 %; at comparable observed FDP the advantage is robust for 50 bp on narrow peaks, small or absent for 100 bp on sd 150, modest for broadening at 3 vs 3, and neither detects broadening at 2 vs 2; ProfileSeg's simulator and our comparator choice; no real counts</td>
+</tr>
+<tr>
+<td><code>shift</code> power increases with shift size</td>
+<td><strong>not supported</strong>: falls beyond ~1.5–2× peak sd; use <code>shape_any</code> for detection</td>
+</tr>
+<tr>
+<td>real-data calibration</td>
+<td>PRO-seq 3 vs 3 within nominal; yeast 2 vs 2 above nominal over all splits (<code>shape_kernel</code> 0.11–0.13, <code>shape_any</code> 0.10–0.11), associated with replicate structure, also with held-out regions; cause undetermined (§7a, §0′b)</td>
+</tr>
+</tbody>
+</table></div>
+<h2>9. Open items</h2>
+<ol>
+<li>
+<p>From rounds 4–5: separating translations from one-sided gains needs a different discriminator than R²;
+    real-count diffSplice comparison (BAM path).
+    From round 4: separate one-sided gains from translations (e.g. compare a translation model with a gain
+    model per region); a selection-adjusted or interval estimate for called regions; diffSplice on real counts
+    (BAM path) and with tuned configurations; independent real data.</p>
+</li>
+<li>
+<p>Proposed from this round: a label-free replicate-structure diagnostic (within-group pairing ratio)
+   reported with the per-region tests; a reliability flag for the translation estimate (d beyond the
+   template's support, multimodal ambiguity) and a note on selection bias among called regions.</p>
+</li>
+<li>
+<p>Uncertainty for the shift estimate (interval, fit quality, a "not a translation" flag).</p>
+</li>
+<li>Same-target comparisons: csaw / DiffBind (amplitude), MMDiff2 (shape, version and configuration
+   stated), IWTomics with aligned inputs (localisation), compared per question.</li>
+<li>Validation on real data not used during development.</li>
+<li>Per-class calibration for small region sets (e.g. a smoothed covariate-adjusted null that does not
+   coarsen the p-value grid), the residual low-depth <code>shift</code> excess, and the absolute amplitude test.</li>
+<li>Spatial dependence beyond duplicated windows; real multimodal or asymmetric shapes.</li>
+</ol>
+<h2>10. Reproduction</h2>
+<pre><code>python -m pytest -q tests/
+PYTHONPATH=benchmarks python benchmarks/profileseg_calibration_boundary.py --out OUT/dev_v3 \
+    --semireal SEMIREAL.npz --reps 100                       # also: --null none; --fdr-strata spread|depth
+PYTHONPATH=benchmarks python benchmarks/profileseg_calibration_boundary.py --out OUT/confirm_v3 \
+    --semireal SEMIREAL.npz --reps 100 --seed-base 9100000
+python benchmarks/profileseg_review_tables.py OUT docs/PROFILESEG_V3_REVIEW.md docs/PROFILESEG_CALIBRATION.md
+# round 3
+PYTHONPATH=benchmarks python benchmarks/profileseg_calibration_boundary.py --out OUT/mixed_n_v3 \
+    --semireal SEMIREAL.npz --reps 100 --factors mixed_n          # and --null none
+python benchmarks/profileseg_shift_boundary.py --out OUT/shift --templates REAL_TEMPLATES.npz --reps 30
+python benchmarks/profileseg_insertion.py --out OUT/insertion --yeast-cache Y.npz --proseq-cache P.npz
+python benchmarks/profileseg_replicate_structure.py Y.npz OUT/insertion/insertion_runs.json OUT/REPLICATE_STRUCTURE.md
+</code></pre>
+<p><code>SEMIREAL.npz</code> is built from GSE112560 bigWigs by <code>python benchmarks/semireal.py CONFIG OUT.npz</code>. Raw
+data are not in the repository.</p>
+</main></body>
+</html>

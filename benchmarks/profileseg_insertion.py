@@ -22,9 +22,12 @@ Input caches are built by --build-yeast / --build-proseq from GEO bigWigs (read 
 from __future__ import annotations
 
 import argparse
+import datetime
+import hashlib
 import itertools
 import json
 import os
+import subprocess
 import zlib
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -134,7 +137,7 @@ def run(job):
                     fdp=float((called & ~t).sum() / nc) if nc else 0.0,
                     power=float((called & t).sum() / t.sum()) if t.any() else float("nan"))
 
-    for m in ("shape_kernel", "shift", "centroid"):
+    for m in ("shape_kernel", "shift", "shape_any", "centroid"):
         if m in reg.tests:
             t = reg.tests[m]
             out["v2 centroid (moderated t)" if m == "centroid" else m] = score(
@@ -232,9 +235,11 @@ def main(argv=None) -> int:
         g = json.loads(str(np.load(args.proseq_cache, allow_pickle=True)["groups"]))
         for name, a, b in splits_for(g, balanced_by=g):
             jobs += [(args.proseq_cache, "proseq", name, a, b, ins, r) for ins in INSERTIONS for r in range(args.reps)]
-    agg = {}
+    agg, records = {}, []
+    started = datetime.datetime.now().isoformat(timespec="seconds")
     with ProcessPoolExecutor(max_workers=args.jobs) as pool:
-        for data, name, ins, res in pool.map(run, jobs):
+        for job, (data, name, ins, res) in zip(jobs, pool.map(run, jobs), strict=True):
+            records.append(dict(data=data, split=name, insertion=ins, rep=job[-1], results=res))
             for m, v in res.items():
                 agg.setdefault(data, {}).setdefault(m, {}).setdefault(ins, []).append(v)
     lines = ["# In-silico insertion on real replicates", ""]
@@ -252,7 +257,16 @@ def main(argv=None) -> int:
             cells = " | ".join(f"{mean(i, 'power'):.2f} / {mean(i, 'fdp'):.3f}" for i in INSERTIONS[2:])
             lines.append(f"| {m} | {mean('none', 'called'):.4f} / {mean('none', 'any'):.2f} | {mean('amplitude', 'called'):.4f} | {cells} |")
         lines.append("")
-    (out / "insertion.json").write_text(json.dumps(table, indent=1))
+    root = Path(__file__).resolve().parents[1]
+    git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, text=True).stdout.strip()  # noqa: E731
+    prov = dict(commit=git("rev-parse", "HEAD"), uncommitted_src=len(git("status", "--porcelain", "--", "src").splitlines()),
+                regional_py_sha256=hashlib.sha256((root / "src/genomecanvas/profileseg/regional.py").read_bytes()).hexdigest()[:16],
+                src_diff_sha256=hashlib.sha256(git("diff", "HEAD", "--", "src").encode()).hexdigest()[:16],
+                reps=args.reps, started=started, finished=datetime.datetime.now().isoformat(timespec="seconds"))
+    (out / "insertion_runs.json").write_text(json.dumps(records, indent=0))
+    lines.insert(1, f"\nCommit `{prov['commit'][:10]}`; uncommitted src files {prov['uncommitted_src']}; regional.py "
+                    f"`{prov['regional_py_sha256']}`; src diff `{prov['src_diff_sha256']}`; {started} → {prov['finished']}.\n")
+    (out / "insertion.json").write_text(json.dumps(dict(provenance=prov, summary=table), indent=1))
     (out / "INSERTION.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     return 0

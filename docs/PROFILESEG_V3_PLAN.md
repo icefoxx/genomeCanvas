@@ -55,9 +55,36 @@ Baseline: tag `profileseg-v2.4` (commit `13206cc`). Development branch: `profile
 | manifest support | done | `.bam`/`.cram` signal files select the BAM path; `bam.*` options in the config |
 | depth diagnostic | done | BAM: exact fragments per region; bigWig: count quantum + single-fragment footprint read from the track (quantum found in 4/4 GEO tracks; footprints 2 bp point, 60 bp read coverage, 157 / 190 bp fragment coverage); yeast estimate ~1,000–1,450 vs ~1,600 expected (within ~1.5×). Warning below a median of 50 fragments |
 | count-based amplitude (voom weights) | **evaluated, rejected** | calibrated on Poisson-only counts but not on ChIP-like regional counts (false share 1.4–6.7 % of exact-null regions): variance there is region-specific biology, not count-driven |
-| exact-null per-region evaluation | done | amplitude tests: ≤ 1.3 % false calls among exact-null regions, but complete-null FWER-type R2 still 0.20 (3 vs 2) and 0.275 (2-cell templates) for absolute `log2_signal`: a real, mild liberalness remains |
+| exact-null per-region evaluation | done | per-region absolute amplitude (`log2_signal`) is **miscalibrated** under complete nulls in two designs: FWER (= FDR under a complete null) 0.20 at 3 vs 2 and 0.275 with 2-cell templates, against a nominal 0.05. The share of false calls among exact-null regions (≤ 1.3 %) is a different measure and does not offset this. Per-region amplitude inference is not claimed until fixed |
 | bigWig vs BAM (simulation, same fragments) | done | both calibrated (0 calls under null / amplitude-only); power similar, coverage (bigWig) slightly higher than BAM midpoints (smoother); Jaccard agreement 0.80–0.99 |
 
 Next: BAM coverage vs midpoint mode on real data; bigWig vs BAM on the same real reads (yeast, CUT&RUN);
 calibrate the depth threshold by simulation; size selection; aggregate robust estimators; a fix for the
 residual liberalness of per-region absolute amplitude (e.g. robust eBayes, Phipson 2016).
+
+## Review response (2026-10-26): stages 1 and 2
+
+Priorities re-ordered after an external-style review: statistical calibration boundaries and claim
+accuracy first, input engineering second.
+
+| item | status | result |
+|---|---|---|
+| overstated claims | done | "separated by construction" qualified; 50 bp power stated as numbers; `shift` described as a translation-model estimate; csaw re-classified (window tests can see redistribution); IWTomics rejection under amplitude changes described as correct behaviour; MMDiff2 results tied to version 1.30.0 and our configuration; post-hoc exclusion of batch-aligned splits labelled; "Seg" scope stated |
+| union of two BH lists | fixed | `shape_any` (Cauchy combination, one BH); docs no longer recommend "called by either" |
+| criteria at nominal 5 % with Monte Carlo CI | done | built into the calibration-boundary study |
+| pooled-null boundaries | done | docs/PROFILESEG_CALIBRATION.md: whole-list FDR controlled in all cells; per-class p-values not exchangeable in v2.4 (narrow ≈ 2× liberal, broad conservative) |
+| covariate-stratified null | done (v3 default) | per-class calibration 0.8–1.4× nominal with ≥ ~1000 regions; small power cost |
+| stratified FDR | option | `inference.fdr_strata: spread | depth`: FDR within each stratum; the combined list is then **not** FDR-controlled at the same level (counterexample: two strata with one null each → 0.0975 at 0.05; observed whole-list FDP 0.059). Per-subgroup FDR requires strata that match the subgroup |
+
+Next (stage 3, per results): uncertainty for the shift estimate (interval, fit quality, "not a
+translation" flag); same-target comparisons (csaw / DiffBind, MMDiff2, IWTomics with aligned inputs);
+then stage 4 (independent real data, residual low-depth liberalness, aggregate robust estimators).
+
+## v3.1 (2026-10-27)
+
+Frozen after six review rounds. Changes since the v3 checkpoint `5a5be13`: `shape_any` (Cauchy combination);
+covariate-stratified pooled null; optional stratified BH (`inference.fdr_strata`); translation estimate by
+cross-correlation with consistency flags, failure reasons and descriptive R² tier, all exported to
+`region_tests.tsv`; null-strata reporting; corrected wording throughout. Evidence and limits:
+`docs/PROFILESEG_V3_REVIEW.md` (consolidated) and `docs/PROFILESEG_V3_REVIEW_HISTORY.md` (all rounds).
+Paused before the next step (independent real data with real-count comparison).

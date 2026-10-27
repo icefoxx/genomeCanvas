@@ -353,9 +353,15 @@ def test_per_region_shift_finds_shifts_in_both_directions():
     res = per_region_tests(a)
     sh = res.tests["shift"]
     direction = truth["regions"]["shift"][sh["region_index"]]
-    assert (sh["call"][direction > 0] == "Higher").mean() > 0.6
-    assert (sh["call"][direction < 0] == "Lower").mean() > 0.6
-    assert np.median(sh["estimate"][direction > 0]) > 50  # template fit: little attenuation
+    called = np.isin(sh["call"], ("Higher", "Lower", "Changed"))
+    assert called[direction != 0].mean() > 0.6
+    # labelled calls (translation description consistent) have the right direction
+    assert not np.any(sh["call"][direction > 0] == "Lower") and not np.any(sh["call"][direction < 0] == "Higher")
+    assert (sh["call"][direction != 0] != "Changed").mean() > 0.4
+    est = sh["estimate"]  # cross-correlation shift, NaN where the translation description is not consistent
+    assert np.nanmedian(est[direction > 0]) > 80 and np.nanmedian(est[direction < 0]) < -80
+    called = np.isin(sh["call"], ("Higher", "Lower"))
+    assert np.all(np.sign(est[called]) == sh["direction"][called])  # labels and bp values agree
     assert (res.tests["shape_kernel"]["call"] == "Changed").mean() > 0.6
     robust = {r["metric"]: r for r in res.robust_global}
     assert abs(robust["median_region_centroid"]["estimate"]) < 30  # no net shift
@@ -533,3 +539,50 @@ def test_bigwig_count_unit_recovers_quantum_and_footprint(tmp_path):
     bw.close()
     q, footprint = bigwig_count_unit(str(path))
     assert abs(q - scale) < 1e-6 and abs(footprint - flen) <= 5
+
+
+def test_cauchy_combination_is_calibrated_and_handles_dependence():
+    from genomecanvas.profileseg.regional import cauchy_combination
+
+    rng = np.random.default_rng(5)
+    p1, p2 = rng.uniform(size=200_000), rng.uniform(size=200_000)
+    comb = cauchy_combination(p1, p2)
+    assert abs(np.mean(comb < 0.05) - 0.05) < 0.003 and abs(np.mean(comb < 0.001) - 0.001) < 0.0004
+    assert np.allclose(cauchy_combination(p1, p1), p1, atol=1e-9)  # perfectly dependent: unchanged
+    assert np.allclose(cauchy_combination(p1, np.full_like(p1, np.nan)), p1, atol=1e-9)  # missing test ignored
+
+
+def test_covariate_stratified_null_restores_per_class_calibration():
+    from genomecanvas.profileseg.regional import adjusted_pooled_p
+
+    rng = np.random.default_rng(11)
+    # two region classes whose null statistics differ in scale (heavy vs compressed); 20 assignments
+    n_reg, A = 4000, 20
+    scale = np.where(np.arange(n_reg) < n_reg // 2, 4.0, 0.25)
+    F = rng.chisquare(3, size=(A, n_reg)) * scale
+    cov = scale * rng.uniform(0.9, 1.1, n_reg)  # label-invariant covariate tracking the class
+    for mode, ok in (("none", False), ("strata", True)):
+        p = adjusted_pooled_p(F, 0, cov, mode=mode)
+        heavy = np.mean(p[: n_reg // 2] < 0.05)
+        assert (abs(heavy - 0.05) < 0.015) == ok
+
+
+def test_region_tests_tsv_exports_translation_diagnostics(tmp_path):
+    import csv
+
+    from genomecanvas.profileseg.report import write_regional
+
+    profiles, _ = simulate("sparse_shift", SimSettings(n_regions=200), seed=3)
+    a = analyse(profiles, Config(reference="WT", alternative="KO", bootstrap=10))
+    res = per_region_tests(a)
+    (tmp_path / "results" / "metrics").mkdir(parents=True)
+    (tmp_path / "reports").mkdir()
+    write_regional(a, res, tmp_path)
+    rows = list(csv.DictReader(open(tmp_path / "results/metrics/region_tests.tsv"), delimiter="\t"))
+    sh = [r for r in rows if r["metric"] == "shift"]
+    for col in ("shift_bp_xcorr", "shift_bp_fit", "translation_r2", "translation_ambiguity", "translation_consistent",
+                "translation_flag", "translation_fit"):
+        assert col in rows[0]
+    # a Changed shift call always carries a reason; a directional call never does
+    assert all(r["translation_flag"] for r in sh if r["call"] == "Changed")
+    assert all(not r["translation_flag"] for r in sh if r["call"] in ("Higher", "Lower"))

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ProfileSeg Evaluation</title>
+<title>ProfileSeg evaluation report</title>
 <style>
 :root { --bg:#ffffff; --fg:#1f2328; --muted:#59636e; --line:#d1d9e0; --head:#f6f8fa; --accent:#0969da; --code:#eff1f3; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
@@ -30,6 +30,7 @@ td strong { color: var(--fg); }
 </head>
 <body><main>
 <h1>ProfileSeg evaluation report</h1>
+<p><em>Name: "Seg" currently means region-level screening of differential profiles, not segmentation of curves into changed intervals.</em></p>
 <p><em>Status as of 2026-10-26, end of day (code: ProfileSeg v2.4, uncommitted working tree after commit <code>a6fa276</code>).
 All numbers come from the scripts in <code>benchmarks/</code> and are detailed in <code>docs/PROFILESEG_COMPARISON.md</code>.</em></p>
 <h2>1. Summary</h2>
@@ -57,7 +58,7 @@ redistribution, cut sites, histone spreading) is simulation-only.</p>
 <tbody>
 <tr>
 <td>statistical design</td>
-<td>replicate-level inference; amplitude/shape separated by construction; pooled permutation null over regions and label assignments with a label-invariant stabiliser</td>
+<td>replicate-level inference; shape metrics use background-corrected, mass-normalised profiles, which separates shape from amplitude exactly for noise-free multiplicative changes and approximately with noise and imperfect background estimates (checked by amplitude-only scenarios, not guaranteed); per-region p-values come from a null pooled over regions and label assignments, so they depend on the null being comparable across regions (§4, §7)</td>
 </tr>
 <tr>
 <td>calibration evidence</td>
@@ -65,7 +66,7 @@ redistribution, cut sites, histone spreading) is simulation-only.</p>
 </tr>
 <tr>
 <td>power</td>
-<td>high for shifts ≥ 50 bp at 3 vs 3 and ≥ 20 bp for coherent shifts (PRO-seq); low for 50 bp at 2 vs 2 and for partial broadening</td>
+<td>per region (20 % of regions changed): 100 bp shifts 0.52–0.97; 50 bp shifts 0.16–0.47 at 3 vs 3 and ≤ 0.16 at 2 vs 2; partial broadening 0.01–0.65 depending on shape and design; coherent ~20 bp shifts detected on real PRO-seq at 2 vs 2</td>
 </tr>
 <tr>
 <td>robustness</td>
@@ -193,7 +194,7 @@ and per-region <em>absolute</em> amplitude fails R2 in three designs (§4).</p>
 <tr>
 <td>insertion on real replicates (20 % of regions)</td>
 <td>yeast 2 vs 2, PRO-seq 3 vs 3</td>
-<td>FDP 0.03–0.05 (yeast, batch-aligned splits excluded; 0.12 with them), &lt; 0.02 (PRO-seq); <code>shift</code> 20 bp power 0.97–1.00; <code>shape_kernel</code> 100 bp 0.99–1.00</td>
+<td>FDP 0.11–0.13 with all yeast splits and 0.03–0.05 after excluding three batch-aligned splits (exclusion rule defined after seeing the results, i.e. post hoc), &lt; 0.02 (PRO-seq); <code>shift</code> 20 bp power 0.97–1.00; <code>shape_kernel</code> 100 bp 0.99–1.00</td>
 </tr>
 <tr>
 <td>yeast isw1Δ chd1Δ vs WT</td>
@@ -299,7 +300,7 @@ the per-region shape tests; the open items are listed in §7.</p>
 <tr>
 <td>transcription pausing (PRO-seq, PRO-cap, Pol II ChIP)</td>
 <td>TSS, strand-matched</td>
-<td>pause-site shift in bp; release vs amount</td>
+<td>redistribution of promoter-proximal signal; a translation-model shift estimate (bp); release vs amount</td>
 <td>real data (human)</td>
 </tr>
 <tr>
@@ -359,24 +360,24 @@ absolute global changes without spike-ins.</p>
 <td>simulation, semi-real, real nulls, insertion, real positives, real BAMs</td>
 </tr>
 <tr>
-<td>MMDiff2</td>
+<td>MMDiff2 (1.30.0, as run here)</td>
 <td>read-distribution difference per peak</td>
 <td>null from replicate pairs</td>
 <td>not separated</td>
 <td>omnibus</td>
 <td>no</td>
 <td>partly</td>
-<td>anti-conservative (simulation 34 %; real nulls 5–13 %); fewer real positives; paired-end mode broken; slow</td>
+<td>in this version and our configuration: anti-conservative p-values (simulation 34 %; real yeast nulls 7–33 of 300 genes), paired-end mode fails, slow; this is evidence about the implementation and setting, not a refutation of the kernel idea, which ProfileSeg also uses</td>
 </tr>
 <tr>
 <td>IWTomics</td>
-<td>where two <strong>region sets</strong> differ along a window</td>
+<td>where along a window two <strong>sets of curves</strong> differ (localisation, all scales)</td>
+<td>no (curves are regions in its intended use)</td>
+<td>depends on input normalisation</td>
+<td>localises within the window</td>
 <td>no</td>
-<td>not separated</td>
 <td>no</td>
-<td>no</td>
-<td>no</td>
-<td>100 % calls under amplitude-only changes (regions as units)</td>
+<td>answers a different question; on raw curves, rejecting under amplitude-only changes is correct behaviour, not a shape false positive; a same-target comparison (normalised inputs, replicate-level design) is still to do</td>
 </tr>
 <tr>
 <td>DANPOS / Nucleosome Dynamics</td>
@@ -390,13 +391,13 @@ absolute global changes without spike-ins.</p>
 </tr>
 <tr>
 <td>DiffBind / csaw / edgeR</td>
-<td>count differences</td>
+<td>count differences (csaw: per window, aggregated to regions)</td>
 <td>yes</td>
-<td>amplitude only</td>
-<td>no</td>
+<td>DiffBind: amplitude; csaw's window tests can detect local redistribution but give no translation estimate</td>
+<td>csaw: indirectly (windows)</td>
 <td>log2FC</td>
 <td>yes</td>
-<td>edgeR as powerful as ProfileSeg's relative amplitude</td>
+<td>edgeR as powerful as ProfileSeg's relative amplitude; csaw not yet compared on the same target</td>
 </tr>
 <tr>
 <td>conventional practice (Wilcoxon over regions, window centroids, pausing index)</td>

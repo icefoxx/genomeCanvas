@@ -1,0 +1,6 @@
+started 2026-10-26T21:17:47-05:00 commit 5a5be13 regional.py 15a257546ec0aa00 src-diff 77e22a272d64fc63
+finished 2026-10-26T21:23:30-05:00 exit 0
+regional.py sha256 (first 16) 15a257546ec0aa00 — same as the calibration runs.
+src diff sha256: 77e22a272d64fc63 for the raw `git diff HEAD -- src` output; 2995aee9d62eb521 for the same text
+with surrounding whitespace stripped (the form recorded by profileseg_calibration_boundary.py). Same code.
+Inputs: yeast MNase (GSE280671) and PRO-seq (GSE233930) caches built by profileseg_insertion.py; not in the repository.

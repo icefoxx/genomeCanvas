@@ -49,6 +49,7 @@ class SimSettings:
     site_fraction: float = 0.2  # share of regions with a site-specific gain
     site_fold: float = 2.5
     fragment_extra_bp: float = 120.0
+    peak_sigma: float = 150.0  # typical peak width (sd, bp) of the parametric shapes
     oriented: bool = True
 
 
@@ -89,7 +90,7 @@ def base_shapes(s: SimSettings, rng, templates: np.ndarray | None = None):
         bg_rel = np.clip(bg / np.maximum(apex[:, 0], 1e-12), 0.05, 2.0)
     else:
         mu = rng.normal(0, 30, s.n_regions)
-        sigma = rng.lognormal(np.log(150), 0.25, s.n_regions)
+        sigma = rng.lognormal(np.log(s.peak_sigma), 0.25, s.n_regions)
         peak = _gauss(c[None, :], mu[:, None], sigma[:, None])
         bg_rel = np.full(s.n_regions, s.background)
     strength = rng.lognormal(0, 0.5, s.n_regions)  # between-region heterogeneity

@@ -1,0 +1,24 @@
+# Calibration boundaries of the per-region shape tests (nominal FDR 0.05)
+
+Generated from `calibration_boundary.json` of the same run. Commit `5a5be1371e` (profileseg-v3); uncommitted changes under src/: 4; regional.py sha256 `15a257546ec0aa00`; src diff sha256 `2995aee9d62eb521`; options {"reps": 100, "null": "strata", "fdr_strata": "depth", "seed_base": 5000000, "factors": "mixed,mixed_large"}; run 2026-10-26T21:01:48 → 2026-10-26T21:05:09.
+
+FDP: mean [95 % Monte Carlo CI] / power; at 0 % changed the FWER [exact binomial CI]. Verdict: EXCEEDS = CI above 0.05; WATCH = estimate above 0.075; ok = no clear exceedance (not proof of FDR ≤ 0.05). p01 = share of unchanged regions with p < 0.01 (nominal 0.01).
+
+| factor | level | design | class | shape_kernel: FDP / power / p01 | shift: FDP / power / p01 | shape_any: FDP / power / p01 | verdict |
+|---|---|---|---|---|---|---|---|
+| mixed | 3 classes | 2v2 | all | 0.045 [0.037, 0.053] / 0.34 / 0.0116 | 0.032 [0.023, 0.041] / 0.16 / 0.0102 | 0.035 [0.028, 0.042] / 0.31 / 0.0113 | ok |
+| mixed | 3 classes | 2v2 | class0 | 0.039 [0.031, 0.046] / 0.83 / 0.0225 | 0.002 [0.000, 0.004] / 0.40 / 0.0023 | 0.020 [0.014, 0.025] / 0.76 / 0.0131 | ok |
+| mixed | 3 classes | 2v2 | class1 | 0.000 [0.000, 0.000] / 0.00 / 0.0000 | 0.160 [0.097, 0.223] / 0.01 / 0.0109 | 0.162 [0.096, 0.227] / 0.01 / 0.0054 | shift:EXCEEDS; shape_any:EXCEEDS |
+| mixed | 3 classes | 2v2 | class2 | 0.075 [0.055, 0.096] / 0.18 / 0.0123 | 0.087 [0.058, 0.116] / 0.07 / 0.0174 | 0.066 [0.048, 0.084] / 0.16 / 0.0152 | shape_kernel:EXCEEDS; shift:EXCEEDS |
+| mixed | 3 classes | 3v3 | all | 0.047 [0.041, 0.054] / 0.42 / 0.0122 | 0.033 [0.026, 0.040] / 0.22 / 0.0097 | 0.041 [0.035, 0.047] / 0.41 / 0.0110 | ok |
+| mixed | 3 classes | 3v3 | class0 | 0.033 [0.028, 0.039] / 0.94 / 0.0181 | 0.007 [0.003, 0.011] / 0.49 / 0.0060 | 0.022 [0.017, 0.027] / 0.91 / 0.0124 | ok |
+| mixed | 3 classes | 3v3 | class1 | 0.000 [0.000, 0.000] / 0.01 / 0.0000 | 0.167 [0.107, 0.227] / 0.03 / 0.0117 | 0.163 [0.105, 0.222] / 0.04 / 0.0054 | shift:EXCEEDS; shape_any:EXCEEDS |
+| mixed | 3 classes | 3v3 | class2 | 0.085 [0.068, 0.102] / 0.31 / 0.0186 | 0.077 [0.052, 0.102] / 0.13 / 0.0115 | 0.073 [0.058, 0.089] / 0.29 / 0.0152 | shape_kernel:EXCEEDS; shift:EXCEEDS; shape_any:EXCEEDS |
+| mixed_large | 3 classes × 1000 | 2v2 | all | 0.052 [0.048, 0.056] / 0.31 / 0.0116 | 0.034 [0.030, 0.038] / 0.14 / 0.0106 | 0.041 [0.038, 0.045] / 0.27 / 0.0111 | ok |
+| mixed_large | 3 classes × 1000 | 2v2 | class0 | 0.034 [0.031, 0.038] / 0.79 / 0.0145 | 0.015 [0.012, 0.018] / 0.38 / 0.0077 | 0.024 [0.021, 0.027] / 0.73 / 0.0115 | ok |
+| mixed_large | 3 classes × 1000 | 2v2 | class1 | 0.260 [0.226, 0.294] / 0.03 / 0.0089 | 0.364 [0.296, 0.432] / 0.01 / 0.0109 | 0.291 [0.253, 0.329] / 0.03 / 0.0093 | shape_kernel:EXCEEDS; shift:EXCEEDS; shape_any:EXCEEDS |
+| mixed_large | 3 classes × 1000 | 2v2 | class2 | 0.083 [0.070, 0.097] / 0.10 / 0.0115 | 0.131 [0.089, 0.172] / 0.02 / 0.0132 | 0.104 [0.086, 0.122] / 0.07 / 0.0126 | shape_kernel:EXCEEDS; shift:EXCEEDS; shape_any:EXCEEDS |
+| mixed_large | 3 classes × 1000 | 3v3 | all | 0.046 [0.043, 0.048] / 0.43 / 0.0113 | 0.040 [0.037, 0.044] / 0.18 / 0.0108 | 0.044 [0.042, 0.047] / 0.40 / 0.0114 | ok |
+| mixed_large | 3 classes × 1000 | 3v3 | class0 | 0.030 [0.028, 0.032] / 0.94 / 0.0125 | 0.022 [0.019, 0.025] / 0.47 / 0.0097 | 0.028 [0.025, 0.030] / 0.91 / 0.0120 | ok |
+| mixed_large | 3 classes × 1000 | 3v3 | class1 | 0.208 [0.184, 0.231] / 0.06 / 0.0096 | 0.330 [0.278, 0.381] / 0.02 / 0.0110 | 0.220 [0.195, 0.244] / 0.05 / 0.0103 | shape_kernel:EXCEEDS; shift:EXCEEDS; shape_any:EXCEEDS |
+| mixed_large | 3 classes × 1000 | 3v3 | class2 | 0.056 [0.050, 0.061] / 0.31 / 0.0117 | 0.077 [0.060, 0.094] / 0.05 / 0.0117 | 0.056 [0.050, 0.062] / 0.25 / 0.0120 | shift:EXCEEDS |

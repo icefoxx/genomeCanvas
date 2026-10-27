@@ -1,5 +1,7 @@
 # ProfileSeg evaluation report
 
+*Name: "Seg" currently means region-level screening of differential profiles, not segmentation of curves into changed intervals.*
+
 *Status as of 2026-10-26, end of day (code: ProfileSeg v2.4, uncommitted working tree after commit `a6fa276`).
 All numbers come from the scripts in `benchmarks/` and are detailed in `docs/PROFILESEG_COMPARISON.md`.*
 
@@ -24,9 +26,9 @@ redistribution, cut sites, histone spreading) is simulation-only.
 
 | aspect | assessment |
 |---|---|
-| statistical design | replicate-level inference; amplitude/shape separated by construction; pooled permutation null over regions and label assignments with a label-invariant stabiliser |
+| statistical design | replicate-level inference; shape metrics use background-corrected, mass-normalised profiles, which separates shape from amplitude exactly for noise-free multiplicative changes and approximately with noise and imperfect background estimates (checked by amplitude-only scenarios, not guaranteed); per-region p-values come from a null pooled over regions and label assignments, so they depend on the null being comparable across regions (§4, §7) |
 | calibration evidence | strong for per-region tests: frozen validations (final round passes every criterion), real nulls in 3 assays (yeast MNase 2v2, PRO-seq 3v3, single-line CUT&RUN 3v3), insertion on real replicates |
-| power | high for shifts ≥ 50 bp at 3 vs 3 and ≥ 20 bp for coherent shifts (PRO-seq); low for 50 bp at 2 vs 2 and for partial broadening |
+| power | per region (20 % of regions changed): 100 bp shifts 0.52–0.97; 50 bp shifts 0.16–0.47 at 3 vs 3 and ≤ 0.16 at 2 vs 2; partial broadening 0.01–0.65 depending on shape and design; coherent ~20 bp shifts detected on real PRO-seq at 2 vs 2 |
 | robustness | single-replicate artefacts absorbed and flagged; batch structure aligned with the contrast is detected (correctly, but it must be designed out) |
 | practicality | bigWig / computeMatrix input; seconds for 5,000 regions; ~100× faster and ~20× less memory than MMDiff2 |
 | maturity | beta; embedded in GenomeCanvas; single developer; not yet packaged separately |
@@ -71,7 +73,7 @@ and per-region *absolute* amplitude fails R2 in three designs (§4).
 | yeast MNase, WT replicate splits (GSE280671) | 2 vs 2, 3 splits | 0 calls (both tests) |
 | yeast MNase, 18 replicate splits over 6 genotypes | 2 vs 2 | `shift`: 0 calls in all; `shape_kernel`: 0 in 15; calls (5–18 % of regions) only in "replicates 1+2 vs 3+4" splits of three genotypes whose replicate pairs differ systematically (cross-pair / within-pair distance 1.5–2.7) |
 | human PRO-seq DMSO, line-balanced (GSE233930) | 3 vs 3, 4 splits | 0 calls (both tests) |
-| insertion on real replicates (20 % of regions) | yeast 2 vs 2, PRO-seq 3 vs 3 | FDP 0.03–0.05 (yeast, batch-aligned splits excluded; 0.12 with them), < 0.02 (PRO-seq); `shift` 20 bp power 0.97–1.00; `shape_kernel` 100 bp 0.99–1.00 |
+| insertion on real replicates (20 % of regions) | yeast 2 vs 2, PRO-seq 3 vs 3 | FDP 0.11–0.13 with all yeast splits and 0.03–0.05 after excluding three batch-aligned splits (exclusion rule defined after seeing the results, i.e. post hoc), < 0.02 (PRO-seq); `shift` 20 bp power 0.97–1.00; `shape_kernel` 100 bp 0.99–1.00 |
 | yeast isw1Δ chd1Δ vs WT | 4 vs 4 | 91 % of genes change shape; ordering of mutants agrees with an independent phasing measure (WT 0.97, singles 0.89–0.94, double 0.40–0.67) |
 | human PRO-seq, NELFB degradation | 2 vs 2 | 6,350 genes shifted, 98 % downstream, +17.5 bp (independent meta-profile ~+18 bp) |
 | yeast MNase, same real BAMs, vs MMDiff2 | 2 vs 2, 134–141 genes | nulls: ProfileSeg 0 and 0, MMDiff2 33 and 20 (of 300); positive: ProfileSeg 90 of 141 |
@@ -130,7 +132,7 @@ the per-region shape tests; the open items are listed in §7.
 | scenario | anchors | question answered | evidence |
 |---|---|---|---|
 | chromatin remodelling (MNase-seq, ATAC) | ATG/TSS (oriented), dyads | which genes' nucleosome arrays shift or lose phasing; occupancy separately | real data (yeast) |
-| transcription pausing (PRO-seq, PRO-cap, Pol II ChIP) | TSS, strand-matched | pause-site shift in bp; release vs amount | real data (human) |
+| transcription pausing (PRO-seq, PRO-cap, Pol II ChIP) | TSS, strand-matched | redistribution of promoter-proximal signal; a translation-model shift estimate (bp); release vs amount | real data (human) |
 | TF mutants, cofactor loss (ChIP, CUT&RUN) | summits, motifs, dyads | binding lost vs moved (e.g. toward NFR) | simulation, semi-real |
 | DNA damage / cut sites | cut sites | signal level vs spread around breaks | simulation |
 | histone marks at TSS/enhancers | TSS, enhancers | domain spreading vs level change (local domains only) | simulation |
@@ -148,10 +150,10 @@ absolute global changes without spike-ins.
 | tool | question | replicates as unit | amplitude vs shape | per-region shape | effect sizes | 2 vs 2 | evidence here |
 |---|---|---|---|---|---|---|---|
 | **ProfileSeg** | amplitude + shape, aggregate and per region | yes | separated | yes | bp, log2 | yes | simulation, semi-real, real nulls, insertion, real positives, real BAMs |
-| MMDiff2 | read-distribution difference per peak | null from replicate pairs | not separated | omnibus | no | partly | anti-conservative (simulation 34 %; real nulls 5–13 %); fewer real positives; paired-end mode broken; slow |
-| IWTomics | where two **region sets** differ along a window | no | not separated | no | no | no | 100 % calls under amplitude-only changes (regions as units) |
+| MMDiff2 (1.30.0, as run here) | read-distribution difference per peak | null from replicate pairs | not separated | omnibus | no | partly | in this version and our configuration: anti-conservative p-values (simulation 34 %; real yeast nulls 7–33 of 300 genes), paired-end mode fails, slow; this is evidence about the implementation and setting, not a refutation of the kernel idea, which ProfileSeg also uses |
+| IWTomics | where along a window two **sets of curves** differ (localisation, all scales) | no (curves are regions in its intended use) | depends on input normalisation | localises within the window | no | no | answers a different question; on raw curves, rejecting under amplitude-only changes is correct behaviour, not a shape false positive; a same-target comparison (normalised inputs, replicate-level design) is still to do |
 | DANPOS / Nucleosome Dynamics | per-nucleosome changes genome-wide | not replicate-level inference, as far as we know | separated | per nucleosome | yes | — | not run |
-| DiffBind / csaw / edgeR | count differences | yes | amplitude only | no | log2FC | yes | edgeR as powerful as ProfileSeg's relative amplitude |
+| DiffBind / csaw / edgeR | count differences (csaw: per window, aggregated to regions) | yes | DiffBind: amplitude; csaw's window tests can detect local redistribution but give no translation estimate | csaw: indirectly (windows) | log2FC | yes | edgeR as powerful as ProfileSeg's relative amplitude; csaw not yet compared on the same target |
 | conventional practice (Wilcoxon over regions, window centroids, pausing index) | various | no / partly | mixed | no | — | — | miscalibrated or underpowered on real data (§3.3) |
 
 ## 7. Gaps: closed and open

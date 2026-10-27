@@ -26,8 +26,9 @@ REGION_METRICS = {
     "log2_signal": "log2 background-corrected core signal (absolute; depends on upstream normalisation)",
     "log2_signal_relative": "log2 background-corrected core signal relative to the bulk of regions (site-specific; assumes most regions unchanged)",
     "log2_enrichment": "log2(centre signal / local background) per region; insensitive to global rescaling",
+    "shape_any": "shape changed (Cauchy combination of shape_kernel and shift p-values, then one BH); no direction. ACAT validity rests on a tail approximation, checked empirically here",
     "shape_kernel": "omnibus shape test (kernel distance between condition-mean profiles; pooled permutation null); no direction",
-    "shift": "directional shift test (projection on the template derivative, pooled permutation null); estimate = shift in bp from a template fit",
+    "shift": "directional test for translation (projection on the template derivative, pooled permutation null); Higher/Lower only when the translation description is consistent (else Changed, reason in translation_flag); estimate = cross-correlation shift (bp) of the condition means, NaN otherwise. Consistency does not prove a translation (one-sided gains can pass)",
     "centroid": "centre of mass of the background-corrected core profile (bp; oriented anchors); low power on broad profiles",
     "mad_width": "spread (mean absolute deviation, bp) of the background-corrected core profile; low power, exploratory",
 }
@@ -43,6 +44,18 @@ LOW_DEPTH_FRAGMENTS = 50
 # Effect-size estimator for `shift`: stronger smoothing and condition-blind template refinement
 # (benchmarks/profileseg_shift_estimate_tuning.py: worst-cell estimate/true ratio 0.58 → 0.73).
 SHIFT_FIT_SMOOTH = 7
+# Translation estimate reported with `shift` (v3): cross-correlation of the condition means over all lags
+# up to TRANSLATION_MAX_LAG_SHARE of the window. Reliability: same sign as the projection test, the
+# translation explains ≥ TRANSLATION_MIN_R2 of the between-condition difference, and no second
+# cross-correlation peak ≥ TRANSLATION_MAX_AMBIGUITY of the best one (periodic or multimodal profiles).
+TRANSLATION_MAX_LAG_SHARE = 0.25
+TRANSLATION_MIN_R2 = 0.5
+# Round 5 evaluated 0.8 as the decision threshold (chosen on development seeds) and rejected it on new seeds:
+# one-sided gains still passed in 5 cells (0.23–0.52) while real-template translations kept a direction in
+# only 10–70 %. R² is therefore reported as a descriptive tier (translation_fit: high_r2 / moderate_r2), not used
+# to decide what a change is; a high R² does not establish a translation mechanism.
+TRANSLATION_GOOD_R2 = 0.8
+TRANSLATION_MAX_AMBIGUITY = 0.9
 SHIFT_FIT_REFINE = 3
 
 
@@ -137,6 +150,18 @@ def moderated_t(values: np.ndarray, ref: np.ndarray, alt: np.ndarray, covariate:
     t = diff / se
     p = 2 * (stats.norm.sf(np.abs(t)) if np.isinf(d0) else stats.t.sf(np.abs(t), df_total))
     return dict(estimate=diff, t=t, df=df_total, p=p, d0=d0, s02=s02 if np.ndim(s02) == 0 else float(np.nanmedian(s02)))
+
+
+def cauchy_combination(*pvals: np.ndarray) -> np.ndarray:
+    """Cauchy combination (ACAT; Liu & Xie 2020, J Am Stat Assoc 115:393) of p-values with equal
+    weights; approximately valid under arbitrary dependence between them, especially in the tail.
+    NaN inputs are ignored; all-NaN gives NaN."""
+    P = np.vstack([np.asarray(p, float) for p in pvals])
+    P = np.clip(P, 1e-15, 1 - 1e-15)
+    ok = np.isfinite(P)
+    t = np.where(ok, np.tan((0.5 - P) * np.pi), 0.0).sum(0) / np.maximum(ok.sum(0), 1)
+    out = 0.5 - np.arctan(t) / np.pi
+    return np.where(ok.any(0), np.clip(out, 0.0, 1.0), np.nan)
 
 
 def bh(p: np.ndarray) -> np.ndarray:
@@ -314,6 +339,87 @@ def label_assignments(n1: int, n: int, blocks: np.ndarray | None = None) -> tupl
     return splits, splits.index(tuple(range(n1)))
 
 
+NULL_ADJUST = "strata"  # strata (default, v3) | none (v2.4 behaviour) | locscale (evaluated, not recommended)
+
+
+def adjusted_pooled_p(F: np.ndarray, obs_i: int, covariate: np.ndarray, mode: str | None = None,
+                      bins: int | None = None, info: dict | None = None) -> np.ndarray:
+    """Pooled permutation p-values conditional on a label-invariant region covariate.
+
+    Regions differ in how their statistic is distributed under the null (F = D / (W + s0) is
+    compressed where the region's spread is small relative to s0 and heavy-tailed where it is
+    large), so one pooled null is not exchangeable across regions. The covariate (the region's total
+    spread) is identical under every label assignment, so the strata do not depend on the labels and
+    the within-region exchangeability of assignments is untouched. That does not make regions with
+    similar spread exchangeable with each other: tails can still differ with shape or depth, so the
+    cross-region comparability this relies on is an empirical property (checked in
+    docs/PROFILESEG_CALIBRATION.md; low-depth `shift` remains ~1.2–1.4× liberal at p < 0.01), not an
+    exact permutation guarantee.
+
+    ``strata``: pool within contiguous covariate quantile bins (≥ 200 regions each).
+    ``locscale``: log F is centred and scaled by the median and MAD of the null rows, smoothed
+    along the covariate bins, and then pooled over all regions.
+    """
+    mode = mode or NULL_ADJUST
+    if info is not None:
+        info.update(testable_regions=int(F.shape[1]), null_strata=1, null_values_per_stratum=int(F.shape[1] * (F.shape[0] - 1)))
+    if mode == "none":
+        return pooled_permutation_p(F, obs_i)
+    cov = np.asarray(covariate, float)
+    n_reg = F.shape[1]
+    # Each stratum keeps ≥ 200 regions and a null of ≥ 2000 values; finer strata coarsen the
+    # p-value grid until BH can only call large sets (2 vs 2, 600 regions: 3 strata gave no calls).
+    nb = bins or int(np.clip(min(n_reg // 200, n_reg * (F.shape[0] - 1) // 2000), 1, 10))
+    if nb < 2:
+        return pooled_permutation_p(F, obs_i)
+    order = np.argsort(np.argsort(cov, kind="stable"), kind="stable")
+    strata = np.minimum(order * nb // n_reg, nb - 1)
+    if info is not None and mode == "strata":
+        info.update(null_strata=nb, null_values_per_stratum=int(n_reg // nb * (F.shape[0] - 1)))
+    if mode == "strata":
+        return pooled_permutation_p(F, obs_i, strata, min_size=1)
+    if mode == "locscale":
+        lf = np.log(np.maximum(F, 1e-300))
+        rest = np.delete(lf, obs_i, axis=0)
+        mid = np.array([(np.median(rest[:, strata == b]) if np.any(strata == b) else np.nan) for b in range(nb)])
+        mad = np.array([(np.median(np.abs(rest[:, strata == b] - mid[b])) if np.any(strata == b) else np.nan) for b in range(nb)])
+        centre = np.array([np.median(cov[strata == b]) for b in range(nb)])
+        m = np.interp(cov, centre, mid)
+        sc = np.maximum(np.interp(cov, centre, mad), 1e-12)
+        return pooled_permutation_p((lf - m) / sc, obs_i)
+    raise ValueError(f"unknown null adjustment {mode!r}")
+
+
+
+
+def covariate_strata(cov: np.ndarray, n_strata: int) -> np.ndarray:
+    """Quantile strata of a label-invariant covariate (NaN → stratum −1)."""
+    cov = np.asarray(cov, float)
+    out = np.full(len(cov), -1)
+    ok = np.isfinite(cov)
+    if n_strata < 2 or ok.sum() == 0:
+        out[ok] = 0
+        return out
+    r = np.argsort(np.argsort(cov[ok], kind="stable"), kind="stable")
+    out[ok] = np.minimum(r * n_strata // ok.sum(), n_strata - 1)
+    return out
+
+
+def stratified_bh(p: np.ndarray, strata: np.ndarray | None) -> np.ndarray:
+    """BH within each stratum. With valid p-values this controls the FDR within every stratum, so a
+    stratum with little power does not borrow the discoveries of the others. It does **not** control
+    the FDR of the combined list at the same level: two strata with one true null each give a
+    combined FDR of 1 − 0.95² ≈ 0.0975 at level 0.05 (observed in the calibration study: whole-list
+    FDP 0.059 with spread strata). Global BH remains the default for that reason."""
+    if strata is None:
+        return bh(p)
+    q = np.full(len(p), np.nan)
+    for g in np.unique(strata):
+        m = strata == g
+        q[m] = bh(np.asarray(p, float)[m])
+    return q
+
+
 def pooled_permutation_p(F: np.ndarray, obs_i: int, strata: np.ndarray | None = None, min_size: int = 30) -> np.ndarray:
     """p-values of the observed row of F (assignments × regions) against the non-observed rows,
     pooled over regions. ``strata`` (experimental, not used by ``per_region_tests``) pools within
@@ -336,7 +442,8 @@ def pooled_permutation_p(F: np.ndarray, obs_i: int, strata: np.ndarray | None = 
 
 def kernel_shape_test(y: np.ndarray, mask: np.ndarray, ref: np.ndarray, alt: np.ndarray, sigma_bp: float = 60.0,
                       s0_quantile: float = 0.5, centers: np.ndarray | None = None,
-                      strata: np.ndarray | None = None, blocks: np.ndarray | None = None) -> np.ndarray:
+                      strata: np.ndarray | None = None, blocks: np.ndarray | None = None,
+                      info: dict | None = None) -> np.ndarray:
     """Omnibus per-region shape test: a kernel (MMD-type) distance between condition means of the
     mass-normalised profiles, scaled by within-condition spread, with a null pooled over regions
     and all non-observed replicate-label assignments.
@@ -375,6 +482,9 @@ def kernel_shape_test(y: np.ndarray, mask: np.ndarray, ref: np.ndarray, alt: np.
     n = n1 + len(alt)
     phi = p[np.r_[ref, alt]][:, testable] @ L  # untestable regions take no part in s0 or the null
     total = ((phi - phi.mean(0)) ** 2).sum((0, 2))
+    if info is not None:  # label-invariant covariate per region (NaN where untestable)
+        info["total_spread"] = np.full(p.shape[1], np.nan)
+        info["total_spread"][testable] = total
     s0 = np.quantile(total / (n - 1), s0_quantile)
     splits, obs_i = label_assignments(n1, n, None if blocks is None else np.asarray(blocks)[np.r_[ref, alt]])
     if len(splits) < 2 or not testable.any():
@@ -390,7 +500,8 @@ def kernel_shape_test(y: np.ndarray, mask: np.ndarray, ref: np.ndarray, alt: np.
     F = np.array(F)
     pval = np.full(p.shape[1], np.nan)
     if testable.any():
-        pval[testable] = pooled_permutation_p(F, obs_i, None if strata is None else np.asarray(strata)[testable])
+        pval[testable] = (pooled_permutation_p(F, obs_i, np.asarray(strata)[testable]) if strata is not None
+                          else adjusted_pooled_p(F, obs_i, total, info=info))
     return pval
 
 
@@ -432,8 +543,73 @@ def shift_score_test(y: np.ndarray, ref: np.ndarray, alt: np.ndarray, centers: n
         W = (((z[a] - z[a].mean(0)) ** 2).sum(0) + ((z[b] - z[b].mean(0)) ** 2).sum(0)) / max(n - 2, 1)
         F.append(d * d / (W + s0))
     F = np.array(F)
-    pval = pooled_permutation_p(F, obs_i, strata)
+    pval = (pooled_permutation_p(F, obs_i, strata) if strata is not None
+            else adjusted_pooled_p(F, obs_i, ((z - z.mean(0)) ** 2).sum(0)))
     return dict(p=pval, sign=np.sign(z[n1:].mean(0) - z[:n1].mean(0)))
+
+
+def translation_estimate(y: np.ndarray, ref: np.ndarray, alt: np.ndarray, centers: np.ndarray,
+                         smooth: int = 5, max_lag_share: float = TRANSLATION_MAX_LAG_SHARE) -> dict:
+    """Group-level translation (bp, alternative − reference) from the cross-correlation of the
+    mass-normalised condition means over all lags, with its fit quality and ambiguity.
+
+    The per-sample template fit (:func:`template_fit`) is a local Gauss–Newton search from zero: once
+    the conditions are more than ~2 peak widths apart the pooled template is bimodal and the fit can
+    land on the wrong side (sd 60 bp, 150–200 bp shifts: sign correct in ~60 % of called regions). A
+    search over all lags has no such capture range.
+
+    Returns ``shift`` (bp, parabolic sub-bin refinement), ``r2`` (share of the squared between-condition
+    difference removed by translating the reference mean; low for one-sided gains or ratio changes)
+    and ``ambiguity`` (second-highest local maximum of the cross-correlation, at least one peak width
+    away, relative to the highest; high for periodic or multimodal profiles).
+    """
+    yc = np.clip(np.nan_to_num(y), 0, None)
+    p = yc / np.maximum(yc.sum(-1, keepdims=True), 1e-12)
+    a, b = p[ref].mean(0), p[alt].mean(0)
+    if smooth > 1:
+        half = (smooth + 1) // 2
+        kern = np.r_[np.arange(1, half + 1), np.arange(half - 1, 0, -1)].astype(float)
+        kern /= kern.sum()
+        a = np.apply_along_axis(lambda r: np.convolve(r, kern, mode="same"), 1, a)
+        b = np.apply_along_axis(lambda r: np.convolve(r, kern, mode="same"), 1, b)
+    R, B = a.shape
+    h = float(np.median(np.diff(centers)))
+    L = max(1, int(max_lag_share * B))
+    lags = np.arange(-L, L + 1)
+    sc = np.empty((R, len(lags)))
+    for j, k in enumerate(lags):  # b(x) ≈ a(x − k): positive k = alternative shifted downstream
+        if k >= 0:
+            sc[:, j] = (a[:, : B - k] * b[:, k:]).sum(1)
+        else:
+            sc[:, j] = (a[:, -k:] * b[:, : B + k]).sum(1)
+    i = sc.argmax(1)
+    ii = np.clip(i, 1, len(lags) - 2)
+    rows = np.arange(R)
+    y0, y1, y2 = sc[rows, ii - 1], sc[rows, ii], sc[rows, ii + 1]
+    den = y0 - 2 * y1 + y2
+    off = np.where(np.abs(den) > 1e-300, 0.5 * (y0 - y2) / np.where(np.abs(den) > 1e-300, den, 1.0), 0.0)
+    shift = (lags[ii] + np.clip(off, -1, 1)) * h
+    at_edge = (i == 0) | (i == len(lags) - 1)
+    # fit quality: translate a by the integer lag and compare with b
+    a_sh = np.zeros_like(a)
+    for r in range(R):
+        k = int(lags[i[r]])
+        if k >= 0:
+            a_sh[r, k:] = a[r, : B - k]
+        else:
+            a_sh[r, : B + k] = a[r, -k:]
+    base = ((b - a) ** 2).sum(1)
+    r2 = np.where(base > 0, 1.0 - ((b - a_sh) ** 2).sum(1) / np.where(base > 0, base, 1.0), np.nan)
+    # ambiguity: best local maximum at least one peak width (template sd, in lags) from the best one
+    w = np.sqrt(np.maximum(((a * (centers - (a * centers).sum(1, keepdims=True) / np.maximum(a.sum(1, keepdims=True), 1e-12)) ** 2)).sum(1)
+                           / np.maximum(a.sum(1), 1e-12), h * h)) / h
+    loc = np.zeros_like(sc, bool)
+    loc[:, 1:-1] = (sc[:, 1:-1] >= sc[:, :-2]) & (sc[:, 1:-1] >= sc[:, 2:])
+    far = np.abs(np.arange(len(lags))[None, :] - i[:, None]) >= np.maximum(w, 1.0)[:, None]
+    second = np.where(loc & far, sc, -np.inf).max(1)
+    best = sc[rows, i]
+    ambiguity = np.where((best > 0) & np.isfinite(second), np.clip(second, 0, None) / np.where(best > 0, best, 1.0), 0.0)
+    return dict(shift=np.where(at_edge, np.nan, shift), r2=r2, ambiguity=ambiguity, at_edge=at_edge)
 
 
 def replicate_influence(y: np.ndarray, cov: np.ndarray, edges: np.ndarray, ref: np.ndarray, alt: np.ndarray,
@@ -622,11 +798,37 @@ def per_region_tests(a: Analysis, fdr: float = 0.05, shape_quantile: float = 0.0
     # With batches that coincide with the condition the tests return NaN: regions are reported as not_tested.
     testable = len(sidx) >= 20 and (n_assign >= 2 or blocks is not None)
     if testable:
-        p_kernel = kernel_shape_test(y, mask, ref, alt, KERNEL_SIGMA_BP, KERNEL_S0_QUANTILE, M.centers(e), blocks=blocks)
+        kinfo: dict = {}
+        p_kernel = kernel_shape_test(y, mask, ref, alt, KERNEL_SIGMA_BP, KERNEL_S0_QUANTILE, M.centers(e), blocks=blocks,
+                                     info=kinfo)
+        # Optional stratified BH (Sun et al. 2006, Biometrics 62:1) on a label-invariant covariate. Global
+        # BH controls the FDR of the whole list; a stratum with little power can still hold mostly false
+        # calls. Strata must match the subgroup of interest: spread strata fixed broad low-power regions but
+        # not low-depth ones, depth strata the reverse (docs/PROFILESEG_V3_PLAN.md, calibration boundaries).
+        mode = getattr(c, "fdr_strata", "none")
+        fdr_strata, fcov = None, None
+        if mode == "depth" and getattr(a.profiles, "fragments", None) is not None:
+            fcov = np.log1p(np.nanmedian(np.asarray(a.profiles.fragments)[np.r_[a.ref_idx, a.alt_idx]][:, sidx], axis=0))
+        elif mode == "depth":
+            notes.append("fdr_strata = depth needs fragment counts (BAM or a count-quantum bigWig); global BH used")
+        elif mode == "spread":
+            fcov = kinfo["total_spread"]
+        if fcov is not None:
+            n_fdr = int(np.clip(np.isfinite(fcov).sum() // 500, 1, 4))
+            if n_fdr > 1:
+                fdr_strata = covariate_strata(fcov, n_fdr)
+                notes.append(f"shape tests: BH within {n_fdr} strata of {mode} (stratified FDR)")
+            else:
+                notes.append(f"fdr_strata = {mode}: fewer than 1000 testable regions; global BH used")
         tests["shape_kernel"] = _finish(dict(estimate=np.full(len(sidx), np.nan), p=p_kernel, d0=np.nan),
-                                        sidx, fdr, omnibus=True)
+                                        sidx, fdr, omnibus=True, strata=fdr_strata)
         notes.append(f"shape_kernel: null pooled over {len(sidx)} regions × {n_assign - 1} non-observed label assignments"
                      + (" (few assignments: conservative)" if n_assign < 10 else ""))
+        if "null_strata" in kinfo:
+            notes.append(f"shape tests: {kinfo['testable_regions']} testable regions; null in {kinfo['null_strata']} spread "
+                         f"strata of ~{kinfo['null_values_per_stratum']} values each"
+                         + (" (too few regions to stratify: per-class calibration as in v2.4; see docs/PROFILESEG_CALIBRATION.md)"
+                            if kinfo["null_strata"] == 1 else ""))
     core = M.core_mask(a.profiles.edges, c.core_flank)
     cov = np.nan_to_num(a.values[:, sidx][..., core])
     # Template fit: effect size of `shift`. Its width scale is not tested: a moderated t on it was
@@ -635,10 +837,37 @@ def per_region_tests(a: Analysis, fdr: float = 0.05, shape_quantile: float = 0.0
     if a.profiles.oriented and testable:
         # Calls from the projection score test (pooled permutation null); effect size from the template fit.
         score = shift_score_test(y, ref, alt, M.centers(e), smooth=TEMPLATE_SMOOTH, blocks=blocks)
-        est = fit["shift"][alt].mean(0) - fit["shift"][ref].mean(0)
-        res = _finish(dict(estimate=score["sign"], p=score["p"], d0=np.nan), sidx, fdr)
-        res["estimate"] = est
+        est_fit = fit["shift"][alt].mean(0) - fit["shift"][ref].mean(0)
+        tr = translation_estimate(y, ref, alt, M.centers(e), smooth=TEMPLATE_SMOOTH)
+        res = _finish(dict(estimate=score["sign"], p=score["p"], d0=np.nan), sidx, fdr,
+                      strata=fdr_strata if "shape_kernel" in tests else None)
+        # A direction and a bp value are reported only when the translation description is consistent:
+        # cross-correlation and projection agree in sign, the translation explains most of the difference
+        # and the match is unambiguous. This is a fit-consistency flag, not proof that the change is a
+        # translation: one-sided gains that reach significance usually pass it too (round-4 evaluation).
+        sign_ok = np.sign(tr["shift"]) == score["sign"]
+        r2_ok = tr["r2"] >= TRANSLATION_MIN_R2
+        amb_ok = tr["ambiguity"] < TRANSLATION_MAX_AMBIGUITY
+        reliable = np.isfinite(tr["shift"]) & sign_ok & r2_ok & amb_ok
+        reason = np.where(tr["at_edge"], "search_edge",
+                          np.where(~sign_ok, "direction_mismatch",
+                                   np.where(~r2_ok, "poor_translation_fit",
+                                            np.where(~amb_ok, "ambiguous_match", ""))))
+        directional = np.isin(res["call"], ("Higher", "Lower"))
+        res["call"] = np.where(directional & ~reliable, "Changed", res["call"])
+        res["estimate"] = np.where(reliable, tr["shift"], np.nan)
         res["direction"] = score["sign"]
+        res["shift_bp_xcorr"] = tr["shift"]
+        res["shift_bp_fit"] = est_fit
+        res["translation_r2"] = tr["r2"]
+        res["translation_ambiguity"] = tr["ambiguity"]
+        res["translation_consistent"] = reliable
+        res["translation_flag"] = reason
+        res["translation_fit"] = np.where(~reliable, "", np.where(tr["r2"] >= TRANSLATION_GOOD_R2, "high_r2", "moderate_r2"))
+        if directional.any():
+            notes.append(f"shift: {int((directional & ~reliable).sum())} of {int(directional.sum())} significant regions "
+                         "reported as Changed (see translation_flag: direction_mismatch, poor_translation_fit, "
+                         "ambiguous_match, search_edge); translation_consistent is a fit-consistency flag, not proof of a translation")
         tests["shift"] = res
     class_rows = []
     if classes is not None:
@@ -658,6 +887,16 @@ def per_region_tests(a: Analysis, fdr: float = 0.05, shape_quantile: float = 0.0
                            shift_higher_share=float(hi.sum() / max(hi.sum() + lo.sum(), 1)),
                            median_abs_shift_called_bp=float(np.median(np.abs(est[hi | lo]))) if (hi | lo).any() else float("nan"))
             class_rows.append(row)
+    # One list of shape changes: the union of two separately BH-adjusted lists does not control FDR
+    # at the nominal level, so kernel and shift p-values are combined per region (Cauchy combination:
+    # approximately valid for dependent p-values through a tail approximation, not exactly; its
+    # calibration on these discrete, empirical p-values is checked by simulation).
+    if "shape_kernel" in tests:
+        pk = tests["shape_kernel"]["p"]
+        ps = tests["shift"]["p"] if "shift" in tests else np.full_like(pk, np.nan)
+        res_any = _finish(dict(estimate=np.full(len(sidx), np.nan), p=cauchy_combination(pk, ps), d0=np.nan),
+                          sidx, fdr, omnibus=True, strata=fdr_strata)
+        tests["shape_any"] = res_any
     # Full-window moments on regions with positive mass in every sample (moments are ratios). The
     # support-restricted versions were better on parametric shapes but miscalibrated on real noise
     # (benchmarks/profileseg_region_tuning.py), so they are not used for testing.
@@ -718,8 +957,8 @@ def _n_assignments(n1: int, n2: int) -> int:
     return total // 2 if n1 == n2 else total
 
 
-def _finish(res: dict, idx: np.ndarray, fdr: float, omnibus: bool = False) -> dict:
-    q = bh(res["p"])
+def _finish(res: dict, idx: np.ndarray, fdr: float, omnibus: bool = False, strata: np.ndarray | None = None) -> dict:
+    q = stratified_bh(res["p"], strata) if strata is not None else bh(res["p"])
     changed = "Changed" if omnibus else None
     call = np.where(~np.isfinite(q), "not_tested",
                     np.where(q < fdr, changed if omnibus else np.where(res["estimate"] > 0, "Higher", "Lower"),

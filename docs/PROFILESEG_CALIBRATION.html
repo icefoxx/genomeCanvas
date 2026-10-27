@@ -1,0 +1,991 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calibration boundaries of the per-region shape tests (v3)</title>
+<style>
+:root { --bg:#ffffff; --fg:#1f2328; --muted:#59636e; --line:#d1d9e0; --head:#f6f8fa; --accent:#0969da; --code:#eff1f3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --head:#151b23; --accent:#4493f8; --code:#262c36; } }
+:root[data-theme="dark"] { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --head:#151b23; --accent:#4493f8; --code:#262c36; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 1.9rem; margin: 0 0 .4rem; }
+h2 { font-size: 1.35rem; margin: 2.2rem 0 .6rem; padding-bottom: .3rem; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 1.6rem 0 .5rem; }
+p, li { max-width: 72ch; }
+em { color: var(--muted); }
+code { background: var(--code); padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+a { color: var(--accent); }
+.table { overflow-x: auto; margin: .8rem 0 1.2rem; border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { background: var(--head); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td strong { color: var(--fg); }
+</style>
+</head>
+<body><main>
+<h1>ProfileSeg — calibration boundaries of the per-region shape tests (v3)</h1>
+<p>Script: <code>benchmarks/profileseg_calibration_boundary.py</code>. Run outputs (JSON with provenance, and the
+Markdown generated from it): <code>benchmarks/results/calibration/&lt;run&gt;/</code>. Every table between <code>gen:</code> markers
+in this file is generated from those JSON files by
+<code>python benchmarks/profileseg_review_tables.py benchmarks/results/calibration docs/PROFILESEG_CALIBRATION.md</code>.</p>
+<h2>Scope of the claims</h2>
+<ul>
+<li>These are <strong>empirical</strong> results in the simulated and semi-real scenarios listed below. "ok" means
+  that no statistically clear exceedance of the nominal level was observed in a cell (the 95 % Monte
+  Carlo CI of the mean FDP did not lie above 0.05). It does not establish FDR ≤ 0.05.</li>
+<li>The covariate-stratified null (§4) does not depend on the labels, so the exchangeability of label
+  assignments within a region is untouched. Comparability of the null across regions is a separate,
+  empirical property; it is improved, not guaranteed.</li>
+</ul>
+<h2>1. Protocol</h2>
+<p>Fixed before the first run on seeds 5 000 000+: parametric shapes, 600 regions, 20 % changed (half
+translated by 100 bp, half broadened ×1.5), 2 vs 2 and 3 vs 3, 100 runs per cell. One factor varied at a
+time: peak width (sd 60 / 150 / 400 bp), depth (5 / 15 / 40 / 160 reads per bin at the apex), replicate
+noise (low / default / high), share of changed regions (0 / 5 / 20 / 50 %), overlapping windows (every
+region duplicated 200 bp away), mixed region classes (narrow, broad, low depth; 200 each, reported per
+class), a balanced sample-wide 15 bp artefact, real replicate noise (GSE112560). Outcomes at nominal FDR
+0.05: mean FDP with 95 % Monte Carlo CI (FWER with an exact binomial CI under the complete null); power;
+p01 = share of unchanged regions with p &lt; 0.01 (nominal 0.01).</p>
+<p>Deviations from the original protocol: runs per cell raised from 30 to 100 after a one-run smoke test;
+<code>mixed_large</code> (1000 regions per class) added after the first run; the v3 null was designed after the
+first run. Development runs therefore reuse the seeds the design was developed on. The confirmatory run
+(§6) uses new seeds and criteria fixed before it was run.</p>
+<h2>2. Runs</h2>
+<!-- gen:provenance -->
+<div class="table"><table>
+<thead>
+<tr>
+<th>run</th>
+<th>purpose</th>
+<th>seeds</th>
+<th>null</th>
+<th>FDR</th>
+<th>commit</th>
+<th>uncommitted src files</th>
+<th>regional.py sha256</th>
+<th>src diff sha256</th>
+<th>started → finished</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>confirm_v3</td>
+<td>confirmatory, v3 default (frozen)</td>
+<td>9100000+</td>
+<td>strata</td>
+<td>none</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T21:05:10 → 2026-10-26T21:17:20</td>
+</tr>
+<tr>
+<td>dev_fdr_depth</td>
+<td>development, depth FDR strata</td>
+<td>5000000+</td>
+<td>strata</td>
+<td>depth</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T21:01:48 → 2026-10-26T21:05:09</td>
+</tr>
+<tr>
+<td>dev_fdr_spread</td>
+<td>development, spread FDR strata</td>
+<td>5000000+</td>
+<td>strata</td>
+<td>spread</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T20:58:23 → 2026-10-26T21:01:46</td>
+</tr>
+<tr>
+<td>dev_v24</td>
+<td>development, v2.4 null</td>
+<td>5000000+</td>
+<td>none</td>
+<td>none</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T20:46:07 → 2026-10-26T20:58:22</td>
+</tr>
+<tr>
+<td>dev_v3</td>
+<td>development, v3 default</td>
+<td>5000000+</td>
+<td>strata</td>
+<td>none</td>
+<td><code>5a5be1371e</code></td>
+<td>4</td>
+<td><code>15a257546ec0aa00</code></td>
+<td><code>2995aee9d62eb521</code></td>
+<td>2026-10-26T20:33:37 → 2026-10-26T20:46:06</td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:provenance -->
+
+<p>All runs used the same code (identical regional.py hash and identical hash of the uncommitted <code>src/</code>
+diff on top of commit <code>5a5be13</code>).</p>
+<h2>3. Whole-list FDR</h2>
+<!-- gen:wholelist -->
+<div class="table"><table>
+<thead>
+<tr>
+<th>run</th>
+<th>cells × tests judged</th>
+<th>ok</th>
+<th>WATCH</th>
+<th>EXCEEDS</th>
+<th>largest mean FDP</th>
+<th>largest CI upper bound</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dev_v3</td>
+<td>114</td>
+<td>114</td>
+<td>0</td>
+<td>0</td>
+<td>0.052</td>
+<td>0.059</td>
+</tr>
+<tr>
+<td>dev_v24</td>
+<td>114</td>
+<td>114</td>
+<td>0</td>
+<td>0</td>
+<td>0.052</td>
+<td>0.063</td>
+</tr>
+<tr>
+<td>confirm_v3</td>
+<td>114</td>
+<td>114</td>
+<td>0</td>
+<td>0</td>
+<td>0.049</td>
+<td>0.058</td>
+</tr>
+</tbody>
+</table></div>
+<p>Selected cells (FDP [95 % CI] / power; whole list):</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>factor</th>
+<th>level</th>
+<th>design</th>
+<th>run</th>
+<th>shape_kernel</th>
+<th>shift</th>
+<th>shape_any</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>width</td>
+<td>60</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.052 [0.046, 0.057] / 0.87</td>
+<td>0.034 [0.029, 0.040] / 0.48</td>
+<td>0.046 [0.041, 0.050] / 0.83</td>
+</tr>
+<tr>
+<td>width</td>
+<td>60</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.046 [0.041, 0.051] / 0.86</td>
+<td>0.034 [0.028, 0.039] / 0.48</td>
+<td>0.039 [0.035, 0.044] / 0.81</td>
+</tr>
+<tr>
+<td>width</td>
+<td>400</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.027 [0.015, 0.039] / 0.02</td>
+<td>0.011 [0.000, 0.024] / 0.00</td>
+<td>0.014 [0.004, 0.024] / 0.01</td>
+</tr>
+<tr>
+<td>width</td>
+<td>400</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.032 [0.017, 0.047] / 0.03</td>
+<td>0.000 [0.000, 0.000] / 0.00</td>
+<td>0.006 [0.000, 0.012] / 0.01</td>
+</tr>
+<tr>
+<td>depth</td>
+<td>5.0</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.037 [0.031, 0.044] / 0.26</td>
+<td>0.036 [0.025, 0.047] / 0.07</td>
+<td>0.030 [0.023, 0.037] / 0.22</td>
+</tr>
+<tr>
+<td>depth</td>
+<td>5.0</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.045 [0.037, 0.052] / 0.28</td>
+<td>0.043 [0.029, 0.057] / 0.07</td>
+<td>0.041 [0.034, 0.048] / 0.24</td>
+</tr>
+<tr>
+<td>noise</td>
+<td>high</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.036 [0.028, 0.043] / 0.18</td>
+<td>0.029 [0.014, 0.044] / 0.01</td>
+<td>0.034 [0.025, 0.042] / 0.14</td>
+</tr>
+<tr>
+<td>noise</td>
+<td>high</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.034 [0.026, 0.042] / 0.19</td>
+<td>0.026 [0.011, 0.040] / 0.02</td>
+<td>0.032 [0.024, 0.041] / 0.13</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.0</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.0</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.0</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.0</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+<td>FWER 0.000 [0.000, 0.036]</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.5</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.043 [0.040, 0.046] / 0.63</td>
+<td>0.030 [0.026, 0.033] / 0.32</td>
+<td>0.037 [0.034, 0.040] / 0.59</td>
+</tr>
+<tr>
+<td>proportion</td>
+<td>0.5</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.044 [0.040, 0.047] / 0.63</td>
+<td>0.031 [0.027, 0.035] / 0.31</td>
+<td>0.039 [0.036, 0.043] / 0.59</td>
+</tr>
+<tr>
+<td>correlation</td>
+<td>overlap</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.046 [0.041, 0.051] / 0.45</td>
+<td>0.043 [0.035, 0.051] / 0.23</td>
+<td>0.045 [0.039, 0.051] / 0.43</td>
+</tr>
+<tr>
+<td>correlation</td>
+<td>overlap</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.048 [0.042, 0.054] / 0.44</td>
+<td>0.045 [0.037, 0.053] / 0.22</td>
+<td>0.047 [0.041, 0.053] / 0.42</td>
+</tr>
+<tr>
+<td>batch</td>
+<td>balanced 15 bp</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.031 [0.027, 0.035] / 0.62</td>
+<td>0.029 [0.024, 0.034] / 0.36</td>
+<td>0.030 [0.026, 0.034] / 0.57</td>
+</tr>
+<tr>
+<td>batch</td>
+<td>balanced 15 bp</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.030 [0.026, 0.034] / 0.61</td>
+<td>0.027 [0.021, 0.032] / 0.35</td>
+<td>0.030 [0.025, 0.034] / 0.57</td>
+</tr>
+<tr>
+<td>semireal</td>
+<td>real noise</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.049 [0.043, 0.055] / 0.54</td>
+<td>0.038 [0.031, 0.045] / 0.42</td>
+<td>0.048 [0.042, 0.054] / 0.56</td>
+</tr>
+<tr>
+<td>semireal</td>
+<td>real noise</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.047 [0.039, 0.055] / 0.53</td>
+<td>0.042 [0.033, 0.051] / 0.42</td>
+<td>0.048 [0.040, 0.057] / 0.55</td>
+</tr>
+<tr>
+<td>mixed_large</td>
+<td>3 classes × 1000</td>
+<td>2v2</td>
+<td>dev_v3</td>
+<td>0.045 [0.042, 0.049] / 0.32</td>
+<td>0.037 [0.032, 0.042] / 0.14</td>
+<td>0.040 [0.036, 0.043] / 0.29</td>
+</tr>
+<tr>
+<td>mixed_large</td>
+<td>3 classes × 1000</td>
+<td>2v2</td>
+<td>confirm_v3</td>
+<td>0.044 [0.041, 0.048] / 0.32</td>
+<td>0.034 [0.029, 0.038] / 0.13</td>
+<td>0.037 [0.034, 0.040] / 0.28</td>
+</tr>
+<tr>
+<td>mixed_large</td>
+<td>3 classes × 1000</td>
+<td>3v3</td>
+<td>dev_v3</td>
+<td>0.045 [0.042, 0.047] / 0.44</td>
+<td>0.042 [0.038, 0.045] / 0.19</td>
+<td>0.043 [0.040, 0.046] / 0.41</td>
+</tr>
+<tr>
+<td>mixed_large</td>
+<td>3 classes × 1000</td>
+<td>3v3</td>
+<td>confirm_v3</td>
+<td>0.046 [0.043, 0.048] / 0.44</td>
+<td>0.039 [0.036, 0.043] / 0.19</td>
+<td>0.043 [0.040, 0.046] / 0.41</td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:wholelist -->
+
+<p>No cell showed a statistically clear exceedance of 0.05 with either null, in development or
+confirmatory runs. The largest point estimates (0.049–0.052) are at the nominal level; the data are
+consistent with FDR close to or below 0.05 in these scenarios, not with a demonstrated bound.</p>
+<h2>4. Per-class tail calibration and the v3 null</h2>
+<p>With the v2.4 null (one null pooled over all regions), p-values of unchanged regions were not
+comparable across region types: narrow peaks ≈ 2× liberal in <code>shape_kernel</code>, broad peaks fully
+conservative, low-depth regions ≈ 1.6× liberal in <code>shift</code>. The whole-list FDR stayed near nominal
+because conservative and liberal classes offset each other. Cause: F = D / (W + s0) with one global s0 is
+compressed where a region's spread is small relative to s0 and heavy-tailed where it is large.</p>
+<p>v3 pools the null within quantile strata of each region's total spread (identical under every label
+assignment), only when each stratum keeps ≥ 200 regions and ≥ 2000 null values (a coarser p-value grid
+otherwise prevents BH from calling small sets). Rejected alternatives: location–scale standardisation
+along the covariate; a 2-D grid with a noise-whiteness covariate.</p>
+<!-- gen:perclass -->
+<p>Share of <strong>unchanged</strong> regions with p &lt; 0.01 (nominal 0.01), mixed designs:</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>design</th>
+<th>class</th>
+<th>test</th>
+<th>v2.4 null (dev)</th>
+<th>v3 null (dev)</th>
+<th>v3 null (confirmatory)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mixed 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_kernel</td>
+<td>0.0225</td>
+<td>0.0225</td>
+<td>0.0257</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shift</td>
+<td>0.0023</td>
+<td>0.0023</td>
+<td>0.0029</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_any</td>
+<td>0.0131</td>
+<td>0.0131</td>
+<td>0.0136</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_kernel</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0000</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shift</td>
+<td>0.0109</td>
+<td>0.0109</td>
+<td>0.0109</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_any</td>
+<td>0.0054</td>
+<td>0.0054</td>
+<td>0.0041</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>low depth</td>
+<td>shape_kernel</td>
+<td>0.0123</td>
+<td>0.0123</td>
+<td>0.0129</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>low depth</td>
+<td>shift</td>
+<td>0.0174</td>
+<td>0.0174</td>
+<td>0.0169</td>
+</tr>
+<tr>
+<td>mixed 2v2</td>
+<td>low depth</td>
+<td>shape_any</td>
+<td>0.0152</td>
+<td>0.0152</td>
+<td>0.0146</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_kernel</td>
+<td>0.0206</td>
+<td>0.0181</td>
+<td>0.0164</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shift</td>
+<td>0.0010</td>
+<td>0.0060</td>
+<td>0.0054</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_any</td>
+<td>0.0109</td>
+<td>0.0124</td>
+<td>0.0114</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_kernel</td>
+<td>0.0000</td>
+<td>0.0000</td>
+<td>0.0001</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shift</td>
+<td>0.0115</td>
+<td>0.0117</td>
+<td>0.0111</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_any</td>
+<td>0.0053</td>
+<td>0.0054</td>
+<td>0.0059</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>low depth</td>
+<td>shape_kernel</td>
+<td>0.0120</td>
+<td>0.0186</td>
+<td>0.0161</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>low depth</td>
+<td>shift</td>
+<td>0.0156</td>
+<td>0.0115</td>
+<td>0.0144</td>
+</tr>
+<tr>
+<td>mixed 3v3</td>
+<td>low depth</td>
+<td>shape_any</td>
+<td>0.0136</td>
+<td>0.0152</td>
+<td>0.0156</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_kernel</td>
+<td>0.0233</td>
+<td>0.0145</td>
+<td>0.0138</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shift</td>
+<td>0.0030</td>
+<td>0.0077</td>
+<td>0.0075</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_any</td>
+<td>0.0136</td>
+<td>0.0115</td>
+<td>0.0102</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_kernel</td>
+<td>0.0000</td>
+<td>0.0089</td>
+<td>0.0097</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shift</td>
+<td>0.0114</td>
+<td>0.0109</td>
+<td>0.0113</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_any</td>
+<td>0.0053</td>
+<td>0.0093</td>
+<td>0.0099</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>low depth</td>
+<td>shape_kernel</td>
+<td>0.0125</td>
+<td>0.0115</td>
+<td>0.0133</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>low depth</td>
+<td>shift</td>
+<td>0.0174</td>
+<td>0.0132</td>
+<td>0.0126</td>
+</tr>
+<tr>
+<td>mixed_large 2v2</td>
+<td>low depth</td>
+<td>shape_any</td>
+<td>0.0160</td>
+<td>0.0126</td>
+<td>0.0128</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_kernel</td>
+<td>0.0207</td>
+<td>0.0125</td>
+<td>0.0132</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shift</td>
+<td>0.0016</td>
+<td>0.0097</td>
+<td>0.0098</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>narrow (sd 60 bp)</td>
+<td>shape_any</td>
+<td>0.0115</td>
+<td>0.0120</td>
+<td>0.0115</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_kernel</td>
+<td>0.0000</td>
+<td>0.0096</td>
+<td>0.0101</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shift</td>
+<td>0.0127</td>
+<td>0.0110</td>
+<td>0.0108</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>broad (sd 400 bp)</td>
+<td>shape_any</td>
+<td>0.0056</td>
+<td>0.0103</td>
+<td>0.0105</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>low depth</td>
+<td>shape_kernel</td>
+<td>0.0116</td>
+<td>0.0117</td>
+<td>0.0115</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>low depth</td>
+<td>shift</td>
+<td>0.0162</td>
+<td>0.0117</td>
+<td>0.0108</td>
+</tr>
+<tr>
+<td>mixed_large 3v3</td>
+<td>low depth</td>
+<td>shape_any</td>
+<td>0.0146</td>
+<td>0.0120</td>
+<td>0.0114</td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:perclass -->
+
+<p>Reading:</p>
+<ul>
+<li><strong>3000 regions (<code>mixed_large</code>)</strong>: all classes and tests within 0.0075–0.0145 (0.75–1.45× nominal)
+  with the v3 null, in development and confirmatory runs; v2.4 ranged 0.000–0.023.</li>
+<li><strong>600 regions (<code>mixed</code>)</strong>: at 2 vs 2 the v3 null cannot stratify (identical to v2.4): narrow-peak
+  <code>shape_kernel</code> 0.022–0.026 (≈ 2.2–2.6×), low-depth <code>shift</code> ≈ 1.7×. At 3 vs 3 with three strata,
+  low-depth <code>shape_kernel</code> is 0.016–0.019 and narrow 0.016–0.018. <strong>Small region sets remain
+  miscalibrated per class.</strong></li>
+<li>Low-depth <code>shift</code> at 3000 regions: 0.011–0.013 (1.1–1.3×).</li>
+</ul>
+<h2>5. Per-class FDR and stratified BH</h2>
+<p>BH controls the FDR of the whole list. A class with almost no power (broad peaks, power ≤ 0.06) collects
+mostly false calls even with calibrated p-values. Stratified BH targets the FDR within each stratum, but
+(i) only strata that match the subgroup help, and (ii) the combined list is then <strong>not</strong> FDR-controlled
+at the same level: two strata with one true null each give 1 − 0.95² ≈ 0.0975 at level 0.05 (the
+implementation reproduces 0.099 in 20 000 draws).</p>
+<!-- gen:fdrstrata -->
+<p>Class FDP (mean over runs) and whole-list FDP [95 % CI], <code>mixed_large</code>, by FDR strata:</p>
+<div class="table"><table>
+<thead>
+<tr>
+<th>design</th>
+<th>FDR strata</th>
+<th>test</th>
+<th>narrow</th>
+<th>broad</th>
+<th>low depth</th>
+<th>whole list</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2v2</td>
+<td>none (global BH)</td>
+<td>shape_kernel</td>
+<td>0.025</td>
+<td>0.222</td>
+<td>0.090</td>
+<td>0.045 [0.042, 0.049] / 0.32</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>none (global BH)</td>
+<td>shift</td>
+<td>0.010</td>
+<td>0.330</td>
+<td>0.165</td>
+<td>0.037 [0.032, 0.042] / 0.14</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>none (global BH)</td>
+<td>shape_any</td>
+<td>0.017</td>
+<td>0.256</td>
+<td>0.103</td>
+<td>0.040 [0.036, 0.043] / 0.29</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>spread</td>
+<td>shape_kernel</td>
+<td>0.048</td>
+<td>0.008</td>
+<td>0.108</td>
+<td>0.059 [0.055, 0.062] / 0.34</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>spread</td>
+<td>shift</td>
+<td>0.018</td>
+<td>0.000</td>
+<td>0.143</td>
+<td>0.032 [0.029, 0.036] / 0.16</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>spread</td>
+<td>shape_any</td>
+<td>0.036</td>
+<td>0.000</td>
+<td>0.110</td>
+<td>0.048 [0.044, 0.051] / 0.32</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>depth</td>
+<td>shape_kernel</td>
+<td>0.034</td>
+<td>0.260</td>
+<td>0.083</td>
+<td>0.052 [0.048, 0.056] / 0.31</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>depth</td>
+<td>shift</td>
+<td>0.015</td>
+<td>0.364</td>
+<td>0.131</td>
+<td>0.034 [0.030, 0.038] / 0.14</td>
+</tr>
+<tr>
+<td>2v2</td>
+<td>depth</td>
+<td>shape_any</td>
+<td>0.024</td>
+<td>0.291</td>
+<td>0.104</td>
+<td>0.041 [0.038, 0.045] / 0.27</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>none (global BH)</td>
+<td>shape_kernel</td>
+<td>0.024</td>
+<td>0.211</td>
+<td>0.060</td>
+<td>0.045 [0.042, 0.047] / 0.44</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>none (global BH)</td>
+<td>shift</td>
+<td>0.015</td>
+<td>0.343</td>
+<td>0.104</td>
+<td>0.042 [0.038, 0.045] / 0.19</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>none (global BH)</td>
+<td>shape_any</td>
+<td>0.021</td>
+<td>0.234</td>
+<td>0.062</td>
+<td>0.043 [0.040, 0.046] / 0.41</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>spread</td>
+<td>shape_kernel</td>
+<td>0.039</td>
+<td>0.014</td>
+<td>0.059</td>
+<td>0.044 [0.041, 0.046] / 0.43</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>spread</td>
+<td>shift</td>
+<td>0.023</td>
+<td>0.000</td>
+<td>0.085</td>
+<td>0.033 [0.029, 0.036] / 0.19</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>spread</td>
+<td>shape_any</td>
+<td>0.034</td>
+<td>0.000</td>
+<td>0.067</td>
+<td>0.041 [0.038, 0.044] / 0.40</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>depth</td>
+<td>shape_kernel</td>
+<td>0.030</td>
+<td>0.208</td>
+<td>0.056</td>
+<td>0.046 [0.043, 0.048] / 0.43</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>depth</td>
+<td>shift</td>
+<td>0.022</td>
+<td>0.330</td>
+<td>0.077</td>
+<td>0.040 [0.037, 0.044] / 0.18</td>
+</tr>
+<tr>
+<td>3v3</td>
+<td>depth</td>
+<td>shape_any</td>
+<td>0.028</td>
+<td>0.220</td>
+<td>0.056</td>
+<td>0.044 [0.042, 0.047] / 0.40</td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:fdrstrata -->
+
+<p>Spread strata remove the broad-class false calls but leave low-depth regions at 0.06–0.14 and raise
+the whole-list <code>shape_kernel</code> FDP at 2 vs 2 to 0.059 [0.055, 0.062]; depth strata changed the class FDPs
+little in this design (why the depth quantiles did not isolate the low-depth class was not investigated). Decision:
+global BH stays the default; <code>inference.fdr_strata</code> is an option for a predefined subgroup, with the
+combined-list caveat.</p>
+<h2>6. Confirmatory run</h2>
+<p>Pre-specified (2026-10-26, before the run): frozen code (hashes in §2), new seed base 9 100 000, same
+cells, v3 default. C1: no EXCEEDS in any whole-list cell; C2: complete null ≤ 5 of 100 runs with any
+call; C3: in <code>mixed_large</code>, p01 within [0.007, 0.014] for <code>shape_kernel</code> and <code>shape_any</code> in every class,
+≤ 0.015 for <code>shift</code>. Power and per-class FDP reported, not judged.</p>
+<!-- gen:confirm -->
+<div class="table"><table>
+<thead>
+<tr>
+<th>criterion</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C1 whole list: no EXCEEDS</td>
+<td><strong>pass</strong></td>
+</tr>
+<tr>
+<td>C2 complete null: ≤ 5 of 100 runs with any call</td>
+<td><strong>pass</strong></td>
+</tr>
+<tr>
+<td>C3 per-class tails (mixed_large): p01 in [0.007, 0.014] (shape_kernel, shape_any), ≤ 0.015 (shift)</td>
+<td><strong>pass</strong></td>
+</tr>
+</tbody>
+</table></div>
+<!-- /gen:confirm -->
+
+<p>C3 was defined on <code>mixed_large</code> only; the 600-region per-class miscalibration (§4) is reproduced in the
+confirmatory run and is a stated limitation, not a pass.</p>
+<h2>7. What can and cannot be claimed</h2>
+<ul>
+<li>Can: in the scenarios tested (width, depth, noise, share changed, overlapping windows, balanced
+  artefacts, real noise; 2 and 3 replicates), whole-list FDR estimates are close to or below 0.05 with no
+  clear exceedance, reproduced on new seeds; per-class tails within the pre-specified tolerance at 3000 regions
+  (and from 1000 regions at 3 vs 3; at 2 vs 2 only from ~2000 testable regions, see the round-3 sweep in
+  <code>benchmarks/results/round3/</code>), i.e. within
+  ~1.5× of nominal for all three shape tests.</li>
+<li>Cannot: a proven FDR bound; exact permutation validity across regions; FDR within a subgroup (predefined
+  or post hoc) under global BH; per-class calibration with a few hundred regions; anything about
+  multimodal or asymmetric real shapes beyond the semi-real cell; per-region absolute amplitude, which is
+  miscalibrated under complete nulls in two designs (FWER = FDR 0.20 and 0.275).</li>
+<li>Real data: PRO-seq 3 vs 3 is within nominal, but on yeast MNase 2 vs 2 (all 18 within-genotype splits)
+  <code>shape_kernel</code> has FDP 0.11–0.13 and calls in 17 % of real-null runs (<code>benchmarks/results/insertion_v3/</code>).
+  A batch explanation for part of this was proposed after seeing the results and is not established.</li>
+</ul>
+</main></body>
+</html>

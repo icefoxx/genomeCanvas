@@ -37,14 +37,16 @@ td strong { color: var(--fg); }
 
 def render(md_path: Path, html_path: Path) -> None:
     text = md_path.read_text(encoding="utf-8")
-    body = markdown.markdown(text, extensions=["tables"])
+    body = markdown.markdown(text, extensions=["tables", "fenced_code"])
+    heading = next((ln[2:].strip() for ln in text.splitlines() if ln.startswith("# ")), "ProfileSeg Evaluation")
+    title = heading if len(heading) <= 40 or " — " not in heading else heading.split(" — ")[-1].strip().capitalize()
     body = body.replace("<table>", '<div class="table"><table>').replace("</table>", "</table></div>")
     html = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ProfileSeg Evaluation</title>
+<title>{title}</title>
 <style>{CSS}</style>
 </head>
 <body><main>

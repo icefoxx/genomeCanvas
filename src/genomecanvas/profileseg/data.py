@@ -70,6 +70,10 @@ class Config:
     # within batches (more power for balanced designs, FDP ~0.07 vs ~0.03 on real yeast data).
     batch_aware: bool = True
     batch_permutation: str = "free"
+    # Per-region shape tests: BH over all regions (none, default) or within label-invariant strata of
+    # region spread or depth (FDR within each stratum, e.g. low-depth regions; the combined list is then
+    # not FDR-controlled at the same level).
+    fdr_strata: str = "none"
     # BAM input (v3; signal files ending in .bam/.cram): see profileseg/bamio.py
     bam_mode: str = "midpoint"  # midpoint | coverage | end5 | end3
     bam_min_mapq: int = 10
@@ -134,6 +138,7 @@ _ALIASES = {
     "shape.align_max_shift": "align_max_shift",
     "inference.batch_aware": "batch_aware",
     "inference.batch_permutation": "batch_permutation",
+    "inference.fdr_strata": "fdr_strata",
     "bam.mode": "bam_mode", "bam.min_mapq": "bam_min_mapq", "bam.proper_pairs": "bam_proper_pairs",
     "bam.remove_duplicates": "bam_remove_duplicates", "bam.min_fragment": "bam_min_fragment",
     "bam.max_fragment": "bam_max_fragment", "bam.fragment_length": "bam_fragment_length", "bam.strand": "bam_strand",
@@ -167,6 +172,8 @@ def validate_config(c: Config) -> None:
         raise ValueError("bam.strand must be any, sense or antisense")
     if c.batch_permutation not in ("free", "within"):
         raise ValueError("inference.batch_permutation must be free or within")
+    if c.fdr_strata not in ("none", "spread", "depth"):
+        raise ValueError("inference.fdr_strata must be none, spread or depth")
     if c.bootstrap < 10:
         raise ValueError("inference.bootstrap must be at least 10 (bootstrap intervals are reported for every metric)")
     if c.background_estimator not in ("mean", "median"):

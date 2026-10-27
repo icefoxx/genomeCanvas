@@ -14,7 +14,7 @@ then an empirical comparison on simulations with known truth, with every tool ru
 | input | coverage tracks (bigWig) or computeMatrix | aligned feature matrices for two region sets | BAMs + peaks | aggregate profiles | BAM counts |
 | unit of inference | **biological replicate** | the curve: a **region** in its intended use (two region sets) | peak; replicates used to build the null | whatever the curve is | replicate |
 | replicate variability | Welch on replicate summaries; per region, moderated t (variance shrinkage over regions) | not modelled when curves are regions; with replicates as curves the permutation space is tiny (3 vs 3: 20 assignments, p ≥ 0.1) | empirical null from within-condition replicate MMDs, smoothed over coverage (locfit) | replicates as observations; no sharing across bins | negative binomial GLM with dispersion shrinkage |
-| amplitude vs shape | separated by construction: background-corrected, mass-normalised shape metrics; amplitude metrics reported apart | not separated; the user has to normalise curves | intended to be shape-only, but MMD depends on coverage | not separated unless curves are area-normalised | amplitude only |
+| amplitude vs shape | separated by mass normalisation of background-corrected profiles (exact for noise-free multiplicative changes, approximate otherwise; checked by amplitude-only scenarios); amplitude metrics reported apart | not separated; the user has to normalise curves | intended to be shape-only, but MMD depends on coverage | not separated unless curves are area-normalised | amplitude only |
 | estimand | interpretable: log2 FC, centroid shift (bp), spread change (bp), asymmetry | a significance map, no effect size | one distance per peak, no direction | per-bin difference | log2 FC |
 | multiplicity | Holm over secondary global metrics; BH over regions | interval-wise FWER over the domain | BH over peaks | BH over bins | BH over regions |
 | smallest p, 3 vs 3 | Welch: continuous; exact permutation floor 0.1 reported | 0.1 when curves are replicates | continuous (parametric locfit null) | continuous | continuous |
@@ -450,7 +450,7 @@ Human PRO-seq, 3 vs 3 (four line-balanced splits):
 - **Complementary tests.** On sharp or periodic profiles the projection test is best for small
   shifts (20 bp: 0.97–1.00) but loses power for large ones (100 bp: 0.34–0.41: the projection is a
   local, linear test and a 100 bp move of a 160 bp nucleosome array is partly aliased), where the
-  kernel test reaches 0.99–1.00. Read both; a region called by either is a shape change.
+  kernel test reaches 0.99–1.00. Do not take the union of the two separately adjusted lists (its FDR can exceed the nominal level); use `shape_any`, which combines the two p-values per region (Cauchy combination) before one BH adjustment, and read `shift` for direction and size.
 - **Conventional practice fails in characteristic ways.** Regions-as-units Wilcoxon calls 78–100 %
   of real null splits significant (pseudo-replication). Window-moment centroids have no power on
   real profiles (MNase arrays) and the moderated version is liberal on PRO-seq (FWER 0.25). The
@@ -476,8 +476,9 @@ subset of it (134–141 genes) is used for the like-for-like comparison.
 
 On all 300 genes MMDiff2 called 28 and 21 genes in the two nulls and 53 in the positive control.
 This confirms on real data what the simulation and the source analysis indicated: MMDiff2's
-p-values are anti-conservative in replicated designs, and its calls under a real change are only
-about twice its false calls under the null. ProfileSeg made no null calls and detected 2.4× more
+p-values were anti-conservative in this version and configuration, and its calls under a real change were only
+about twice its false calls under the null. ProfileSeg made no null calls and made 2.4× more calls (more calls in a
+positive control without per-gene truth is not by itself higher power; power comes from the insertion experiments)
 genes in the positive control. ProfileSeg on all 1,566–1,769 testable genes: 0 calls in both
 nulls, 903 in the positive control (51 %, lower than the 91 % from full-depth GEO tracks because of
 the 3 M-pair subsample).
