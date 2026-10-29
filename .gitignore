@@ -16,3 +16,8 @@ examples/demo_outputs/*.png
 examples/demo_outputs/*.pdf
 examples/advanced_features/*.png
 examples/advanced_features/*.pdf
+
+# Large public inputs fetched by tests/fixtures/reference_demo/download.py.
+tests/fixtures/reference_demo/*.bigWig
+tests/fixtures/reference_demo/*.gtf.gz
+tests/fixtures/reference_demo/*.part

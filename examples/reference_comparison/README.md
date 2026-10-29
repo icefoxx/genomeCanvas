@@ -1,7 +1,8 @@
 # Real-data reference comparison
 
-The downloaded inputs in `tests/fixtures/reference_demo/` are the public demo
-BigWig/GRCm38 data. The comparison script uses only the public data files and
+The inputs in `tests/fixtures/reference_demo/` are the public demo
+BigWig/GRCm38 data. They are not stored in git; fetch them first with
+`python tests/fixtures/reference_demo/download.py`. The comparison script uses only the public data files and
 GenomeCanvas-side rendering code; it does not import or copy the reference
 plotting implementation.
 

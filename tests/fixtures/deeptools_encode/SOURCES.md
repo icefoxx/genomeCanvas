@@ -19,9 +19,10 @@ Source: https://github.com/deeptools/pyGenomeTracks/tree/master/pygenometracks/t
 - `bw/pgt_chrx_2.5e6_3.5e6_b.bw` ← `bigwig3_X_2.5e6_3.5e6.bw` (chrom `X`)
 - `bed/HoxD_cluster_regulatory_regions_mm10.bed`, `bed/HoxD.gtf`
 
-## GEO mouse 2-cell (already in `tests/fixtures/reference_demo`)
+## GEO mouse 2-cell (`tests/fixtures/reference_demo`)
 
-GEO: GSM5746910–GSM5746913 (mm10 / GRCm38).
+GEO: GSM5746910–GSM5746913 (mm10 / GRCm38). Not stored in git; fetch with
+`python tests/fixtures/reference_demo/download.py`.
 
 ## H1 ESC trackplot demo (human chr6 OCT4)
 

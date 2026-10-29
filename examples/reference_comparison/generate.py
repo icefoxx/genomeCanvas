@@ -176,7 +176,18 @@ def draw_cytoband(
     axis.axis("off")
 
 
+def require_data() -> None:
+    names = ["Mus_musculus.GRCm38.102.gtf.gz", *(filename for _, filename, _ in SIGNALS)]
+    missing = [name for name in names if not (DATA / name).is_file()]
+    if missing:
+        raise SystemExit(
+            f"Missing {', '.join(missing)} in {DATA}.\n"
+            "Run: python tests/fixtures/reference_demo/download.py"
+        )
+
+
 def main() -> None:
+    require_data()
     genes = genes_for_loci()
     cytobands = read_cytobands(DATA / "mm10_cytoBandIdeo.txt.gz", chrom="chr7")
     shared_limits: dict[str, tuple[float, float]] = {}

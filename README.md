@@ -135,17 +135,19 @@ spike-ins.
 
 ## Generate p01-p30
 
-The real-data fixtures are included in `tests/fixtures/reference_demo/`. Generate the main p01
-figure and the p02-p30 comparison variants from the repository root:
+The real-data inputs (GEO GSM5746910-13 BigWigs and the Ensembl GRCm38.102 GTF, about 104 MB)
+are not stored in git. Download them into `tests/fixtures/reference_demo/` once, then generate the
+main p01 figure and the p02-p30 comparison variants from the repository root:
 
 ```bash
+python tests/fixtures/reference_demo/download.py
 python -m examples.reference_comparison.generate
 python -m examples.reference_comparison.generate_p02_p30
 ```
 
 The p01 PNG/PDF is written under `examples/reference_comparison/`. The p02-p30 variants are written
-under `examples/reference_comparison/output/`. The scripts use the bundled GRCm38/mm10 BigWig,
-GTF, and cytoband files, so no download is required.
+under `examples/reference_comparison/output/`. The download script verifies each file's SHA-256 and skips
+files already present.
 
 Other runnable examples include:
 

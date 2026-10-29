@@ -377,7 +377,11 @@ def main() -> None:
                 f"{mouse.values.shape[0]} regions",
             )
         else:
-            record("GEO mouse 2-cell BigWig × HoxD BED heatmap + locus", False, "GEO BigWigs missing")
+            record(
+                "GEO mouse 2-cell BigWig × HoxD BED heatmap + locus",
+                False,
+                "GEO BigWigs missing; run tests/fixtures/reference_demo/download.py",
+            )
     except Exception as exc:
         record("GEO mouse 2-cell BigWig × HoxD BED heatmap + locus", False, str(exc))
         traceback.print_exc()
