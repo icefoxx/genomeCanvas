@@ -630,7 +630,9 @@ def test_window_matrix_matches_pybigwig_and_handles_edges(monkeypatch, threshold
     got = window_matrix(path, windows, 30, "mean")
     for row, (chrom, start, end) in enumerate(windows[:25]):
         expected = np.nan_to_num(
-            np.array(handle.stats(chrom, start, end, type="mean", nBins=30, exact=True), dtype=float)
+            np.array(
+                handle.stats(chrom, start, end, type="mean", nBins=30, exact=True), dtype=float
+            )
         )
         assert np.allclose(got[row], expected)
     edge = got[25]
@@ -688,3 +690,53 @@ def test_trusted_proxy_cidr_and_forwarded_ip(tmp_path, data_root):
     app = Studio(make_config(tmp_path, data_root, trusted_proxies=["10.0.0.0/8", "127.0.0.1"]))
     assert app.trusted("10.2.3.4") and app.trusted("127.0.0.1")
     assert not app.trusted("192.168.1.5") and not app.trusted("not-an-ip")
+
+
+def test_sample_qc_via_api(studio, tmp_path):
+    import io
+
+    import numpy as np
+
+    from test_sample_qc import simulate
+
+    _, base = studio
+    alice = Client(base).login("alice@lab.org", "alice@lab.org-pw-123")
+    values, meta = simulate(seed=3, marks=2, groups=4, bins=3000)
+    sheet = "sample_id\ttarget\tmodel\tbatch\n" + "".join(
+        f"{m['sample']}\t{m['mark']}\t{m['group']}\t{m['batch']}\n" for m in meta
+    )
+    buffer = io.BytesIO()
+    np.savez(buffer, values=values, samples=np.array([m["sample"] for m in meta]), bin_size=10000)
+    ids = {}
+    for name, raw in (("nbl.tsv", sheet.encode()), ("bins.npz", buffer.getvalue())):
+        status, file = alice.call(
+            "POST", "/api/projects/P1/uploads", raw=raw, headers={"X-Filename": name}
+        )
+        assert status == 201 and file["role"] == "table", file
+        ids[name] = file["id"]
+    assert file["info"]["kind"] == "matrix"
+    status, out = alice.call(
+        "GET", f"/api/projects/P1/qc-preview?sheet={ids['nbl.tsv']}&matrix={ids['bins.npz']}"
+    )
+    assert status == 200 and out["n_matched"] == len(meta), out
+    assert out["chosen"] == dict(sample="sample_id", mark="target", group="model", batch="batch")
+    settings = dict(qc_sheet=ids["nbl.tsv"], qc_matrix=ids["bins.npz"], dpi=72)
+    status, job = alice.call(
+        "POST", "/api/projects/P1/jobs", dict(category=2, plot=3, settings=settings, files=[])
+    )
+    assert status == 202, job
+    result = alice.wait(job["id"])
+    assert result["status"] == "complete", result
+    names = {f["name"] for f in result["files"]}
+    assert {"qc.json", "qc_flags.tsv", "qc_marks.pdf", "qc_pca_by_mark.png", "figure.png"} <= names
+    methods = alice.call("GET", f"/results/{job['id']}/methods.txt")[1].decode()
+    assert "nearest-neighbour vote" in methods and "1 kb" not in methods
+    # Without a matrix the job explains what is missing.
+    status, job = alice.call(
+        "POST",
+        "/api/projects/P1/jobs",
+        dict(category=2, plot=3, settings={"qc_sheet": ids["nbl.tsv"]}, files=[]),
+    )
+    assert alice.wait(job["id"])["error"].startswith(
+        "Sample QC needs a sample sheet and a signal matrix"
+    )

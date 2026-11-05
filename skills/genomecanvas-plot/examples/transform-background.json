@@ -1,0 +1,25 @@
+{
+  "plot": "transform/background",
+  "files": [
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_Ctcf.bw",
+      "role": "signal",
+      "label": "CTCF",
+      "group": "TF"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_Oct4.bw",
+      "role": "signal",
+      "label": "OCT4",
+      "group": "TF"
+    }
+  ],
+  "settings": {
+    "chrom": "chr6",
+    "start": 31125000,
+    "end": 31145000,
+    "assembly": "hg19",
+    "bg_flank": 5000,
+    "estimator": "median"
+  }
+}

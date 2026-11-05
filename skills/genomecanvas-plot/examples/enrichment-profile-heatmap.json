@@ -1,0 +1,33 @@
+{
+  "plot": "enrichment/profile-heatmap",
+  "files": [
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k4me3.bw",
+      "role": "signal",
+      "label": "H3K4me3",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k27ac.bw",
+      "role": "signal",
+      "label": "H3K27ac",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k4me1.bw",
+      "role": "signal",
+      "label": "H3K4me1",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/narrowpeak/H1_k4me1.bed",
+      "role": "regions",
+      "label": "H3K4me1 peaks"
+    }
+  ],
+  "settings": {
+    "alignment": "center",
+    "flank": 1000,
+    "binsize": 50
+  }
+}

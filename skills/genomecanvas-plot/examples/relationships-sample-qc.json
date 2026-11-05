@@ -1,0 +1,12 @@
+{
+  "plot": "relationships/sample-qc",
+  "settings": {
+    "qc_sheet": "samples.tsv",
+    "qc_matrix": "matrix.npz",
+    "qc_mark": "target",
+    "qc_group": "model",
+    "qc_batch": "batch",
+    "qc_filters": "status=PASS",
+    "qc_skip_marks": "INPUT, IgG"
+  }
+}

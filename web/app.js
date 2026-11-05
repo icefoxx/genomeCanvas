@@ -50,7 +50,7 @@ const S = {
   category: 1, plot: 2, files: [], settings: {}, advanced: '', live: false,
   zoom: 'fit', checker: false, history: [], current: null, revision: 0, resultRevision: -1,
   busy: false, queued: false, openFile: null, figureId: null, view: 'interactive',
-  sections: { color: true, text: true, region: true, matrix: true, heatmap: true, profile: true, analysis: true },
+  sections: { color: true, text: true, region: true, matrix: true, heatmap: true, profile: true, analysis: true, qc: true },
   search: '',
 };
 const readOnly = () => S.role === 'viewer';
@@ -119,25 +119,32 @@ function paletteColors() {
 /** Colour the server will use: explicit per-file colour, else palette slot (signals first, then regions). */
 function fileColor(f) {
   if (f.color) return f.color;
-  if (f.enabled === false || f.role === 'genes') return null;
+  if (f.enabled === false || f.role === 'genes' || f.role === 'table') return null;
   const colors = paletteColors();
   const sig = byRole('signal');
   const idx = f.role === 'signal' ? sig.indexOf(f) : sig.length + byRole('regions').indexOf(f);
   return colors[idx % colors.length];
 }
+const tableFile = id => S.files.find(f => f.id === id && f.role === 'table');
 function requirement(c = S.category, p = S.plot) {
+  if (c === 2 && p === 3) {
+    const items = ['qc_sheet', 'qc_matrix'].map(k => ({ role: k, n: 1, have: tableFile(val(k)) ? 1 : 0, ok: !!tableFile(val(k)) }));
+    return { items, ok: items.every(i => i.ok) };
+  }
   const need = { ...S.meta.requirements[c][p] };
   if (c === 2 && val('rel_mode') !== 'regions') delete need.regions;
   const have = { signal: byRole('signal').length, regions: byRole('regions').length, genes: byRole('genes').length };
   const items = Object.entries(need).map(([role, n]) => ({ role, n, have: have[role], ok: have[role] >= n }));
   return { items, ok: items.every(i => i.ok) };
 }
-const ROLE_NAMES = { signal: ['signal', 'signals'], regions: ['region set', 'region sets'], genes: ['gene annotation', 'gene annotations'] };
+const ROLE_NAMES = { signal: ['signal', 'signals'], regions: ['region set', 'region sets'], genes: ['gene annotation', 'gene annotations'], table: ['table', 'tables'], qc_sheet: ['sample sheet', 'sample sheets'], qc_matrix: ['signal matrix', 'signal matrices'] };
 
 /* ------------------------------------------------------------------ settings schema */
 const C = (...cats) => c => cats.includes(c);
 const matrixWhen = (c, p) => c === 1 || (c === 3 && p === 1);
-const genomeWide = c => c === 2 && val('rel_mode') !== 'regions';
+const relWhen = (c, p = S.plot) => c === 2 && p !== 3;
+const qcWhen = (c, p = S.plot) => c === 2 && p === 3;
+const genomeWide = (c, p = S.plot) => relWhen(c, p) && val('rel_mode') !== 'regions';
 const regionWhen = c => c === 0 || c === 4 || (genomeWide(c) && val('rel_scope') === 'locus');
 const DEFAULT_SKIP = 'chrM, MT, *_random, chrUn*, *_alt, *_fix, chrEBV, *hap*, *decoy*';
 const heatWhen = (c, p) => c === 1 && p !== 1;
@@ -147,7 +154,7 @@ const LEGEND = ['best', 'upper right', 'upper left', 'lower right', 'lower left'
 const unit = () => (val('size_unit') === 'mm' ? 'mm' : 'in');
 const SECTIONS = [
   ['region', 'Region'], ['matrix', 'Regions & binning'], ['heatmap', 'Heatmap'], ['profile', 'Profile'],
-  ['analysis', 'Analysis'], ['tracks', 'Track layout'], ['color', 'Colours & style'], ['text', 'Text & labels'],
+  ['qc', 'Sample QC'], ['analysis', 'Analysis'], ['tracks', 'Track layout'], ['color', 'Colours & style'], ['text', 'Text & labels'],
   ['figure', 'Figure & export'], ['advanced', 'Advanced'],
 ];
 const FIELDS = [
@@ -190,17 +197,32 @@ const FIELDS = [
   { k: 'ymax', l: 'Y max', t: 'number', sec: 'profile', d: '', step: 'any', when: (c, p) => profWhen(c, p) && val('ylim_manual') },
   { k: 'legend', l: 'Show legend', t: 'check', sec: 'profile', d: true, when: (c, p) => c === 1 && p === 1 },
   { k: 'legend_pos', l: 'Legend position', t: 'select', sec: 'profile', d: 'best', o: LEGEND, when: (c, p) => c === 1 && p === 1 && val('legend') },
+  // Sample QC: a sample sheet + a bins x samples matrix (from gcanvas-sampleqc matrix or multiBigwigSummary)
+  { k: 'qc_sheet', l: 'Sample sheet', t: 'select', sec: 'qc', d: '', wide: 1, o: () => tableOptions('sample sheet'), help: 'TSV/CSV with one row per sample. Upload it like any other file; it is listed under Tables.', when: qcWhen },
+  { k: 'qc_matrix', l: 'Signal matrix', t: 'select', sec: 'qc', d: '', wide: 1, o: () => tableOptions('matrix'), help: '.npz from gcanvas-sampleqc matrix, or a multiBigwigSummary --outRawCounts table.', when: qcWhen },
+  { k: '_qcmap', t: 'qcmap', sec: 'qc', wide: 1, when: qcWhen },
+  { k: 'qc_sample', l: 'Sample column', t: 'combo', sec: 'qc', d: '', ph: 'auto', list: () => qcColumns(), help: 'Values must equal the matrix sample names (paths and .bw are ignored).', when: qcWhen },
+  { k: 'qc_mark', l: 'Mark column', t: 'combo', sec: 'qc', d: '', ph: 'auto', list: () => qcColumns(), when: qcWhen },
+  { k: 'qc_group', l: 'Group column', t: 'combo', sec: 'qc', d: '', ph: 'auto', list: () => qcColumns(), when: qcWhen },
+  { k: 'qc_batch', l: 'Batch column', t: 'combo', sec: 'qc', d: '', ph: 'auto / none', list: () => qcColumns(), when: qcWhen },
+  { k: 'qc_filters', l: 'Keep rows', t: 'text', sec: 'qc', d: '', wide: 1, ph: 'status=PASS; replicate!=NA', help: 'column=value or column!=value, several values comma-separated, rules separated by ;', when: qcWhen },
+  { k: 'qc_skip_marks', l: 'Marks without group check', t: 'text', sec: 'qc', d: 'INPUT, IgG', wide: 1, help: 'Controls: still checked for the mark label, not compared between groups.', when: qcWhen },
+  { k: 'qc_k', l: 'Neighbours voting on mark', t: 'number', sec: 'qc', d: 5, min: 1, max: 25, step: 1, when: qcWhen },
+  { k: 'qc_top', l: 'Most variable bins', t: 'number', sec: 'qc', d: 5000, min: 200, step: 1000, when: qcWhen },
+  { k: 'qc_method', l: 'Correlation', t: 'select', sec: 'qc', d: 'pearson', o: [['pearson', 'Pearson (log x+1)'], ['spearman', 'Spearman']], when: qcWhen },
+  { k: 'qc_z', l: 'Low-quality cut-off (robust SD)', t: 'number', sec: 'qc', d: 3, min: 1, max: 10, step: 0.5, when: qcWhen },
+  { k: 'qc_margin', l: 'Mislabel margin (r)', t: 'number', sec: 'qc', d: 0.02, min: 0, max: 0.5, step: 0.01, help: 'How much closer another group must be before a sample is flagged.', when: qcWhen },
   // Analysis: what each sample is summarised over (deepTools multiBigwigSummary BED-file / bins)
-  { k: 'rel_mode', l: 'Summarise signal over', t: 'select', sec: 'analysis', d: 'regions', wide: 1, o: [['regions', 'Selected regions (BED files)'], ['bins', 'Genome-wide bins'], ['windows', 'Sliding windows']], help: 'Genome-wide modes ignore region files and compare samples across the whole genome, like multiBigwigSummary bins.', when: C(2) },
+  { k: 'rel_mode', l: 'Summarise signal over', t: 'select', sec: 'analysis', d: 'regions', wide: 1, o: [['regions', 'Selected regions (BED files)'], ['bins', 'Genome-wide bins'], ['windows', 'Sliding windows']], help: 'Genome-wide modes ignore region files and compare samples across the whole genome, like multiBigwigSummary bins.', when: relWhen },
   { k: 'rel_bin', l: 'Bin / window size (bp)', t: 'combo', sec: 'analysis', d: 10000, list: ['500', '1000', '2000', '5000', '10000', '50000', '100000'], when: genomeWide },
   { k: 'rel_step', l: 'Step (bp)', t: 'combo', sec: 'analysis', d: 2000, list: ['500', '1000', '2000', '5000'], help: 'Window size must be a multiple of the step.', when: c => genomeWide(c) && val('rel_mode') === 'windows' },
   { k: 'rel_scope', l: 'Scope', t: 'select', sec: 'analysis', d: 'genome', o: [['genome', 'Whole genome'], ['chroms', 'Selected chromosomes'], ['locus', 'Current region only']], when: genomeWide },
   { k: 'rel_chroms', l: 'Chromosomes', t: 'text', sec: 'analysis', d: '', ph: 'chr1, chr2, chrX', wide: 1, when: c => genomeWide(c) && val('rel_scope') === 'chroms' },
   { k: 'rel_skip', l: 'Skip chromosomes (patterns)', t: 'text', sec: 'analysis', d: DEFAULT_SKIP, wide: 1, help: 'Comma-separated, * wildcards; matched case-insensitively.', when: c => genomeWide(c) && val('rel_scope') !== 'locus' },
   { k: 'rel_blacklist', l: 'Blacklist', t: 'select', sec: 'analysis', d: '', wide: 1, o: () => [['', 'None'], ...S.files.filter(f => f.role === 'regions').map(f => [f.id, f.label])], help: 'Bins overlapping these regions are removed (e.g. ENCODE blacklist). Any region file in the project can be used.', when: genomeWide },
-  { k: 'rel_stat', l: 'Statistic', t: 'select', sec: 'analysis', d: () => (val('rel_mode') === 'regions' ? 'sum' : 'mean'), o: [['mean', 'Mean (covered bases)'], ['mean0', 'Mean (missing = 0)'], ['sum', 'Sum (signal × bp)'], ['max', 'Maximum']], when: C(2) },
-  { k: 'rel_skip_zeros', l: 'Skip all-zero rows', t: 'check', sec: 'analysis', d: true, when: C(2) },
-  { k: 'rel_max_rows', l: 'Subsample to (rows)', t: 'number', sec: 'analysis', d: '', ph: 'all', min: 100, step: 1000, help: 'Random, reproducible subset for speed (seed 7201).', when: C(2) },
+  { k: 'rel_stat', l: 'Statistic', t: 'select', sec: 'analysis', d: () => (val('rel_mode') === 'regions' ? 'sum' : 'mean'), o: [['mean', 'Mean (covered bases)'], ['mean0', 'Mean (missing = 0)'], ['sum', 'Sum (signal × bp)'], ['max', 'Maximum']], when: relWhen },
+  { k: 'rel_skip_zeros', l: 'Skip all-zero rows', t: 'check', sec: 'analysis', d: true, when: relWhen },
+  { k: 'rel_max_rows', l: 'Subsample to (rows)', t: 'number', sec: 'analysis', d: '', ph: 'all', min: 100, step: 1000, help: 'Random, reproducible subset for speed (seed 7201).', when: relWhen },
   { k: 'corr_transform', l: 'Transform before correlating', t: 'select', sec: 'analysis', d: 'raw', o: [['raw', 'None'], ['log1p', 'log(x + 1)']], help: 'log(x+1) or Spearman reduce the influence of a few very high bins.', when: (c, p) => c === 2 && p === 0 },
   { k: 'pca_top', l: 'Most variable features', t: 'number', sec: 'analysis', d: 1000, min: 2, step: 500, when: (c, p) => c === 2 && p === 1 },
   { k: 'method', l: 'Correlation', t: 'select', sec: 'analysis', d: 'pearson', o: [['pearson', 'Pearson'], ['spearman', 'Spearman']], when: (c, p) => c === 2 && p === 0 },
@@ -263,7 +285,7 @@ const FIELDS = [
 ];
 const FIELD = Object.fromEntries(FIELDS.map(f => [f.k, f]));
 // Changing these keys can show or hide other fields, so the panel is re-rendered.
-const DEP_KEYS = new Set(['rel_mode', 'rel_scope', 'alignment', 'cluster', 'autoscale', 'ln_h', 'ylim_manual', 'legend', 'sort', 'palette', 'custom_palette', 'size_unit', 'exact_size']);
+const DEP_KEYS = new Set(['qc_sheet', 'qc_matrix', 'rel_mode', 'rel_scope', 'alignment', 'cluster', 'autoscale', 'ln_h', 'ylim_manual', 'legend', 'sort', 'palette', 'custom_palette', 'size_unit', 'exact_size']);
 // [label, unit, width, height]
 const SIZE_PRESETS = [['Single column', 'mm', 85, ''], ['1.5 column', 'mm', 114, ''], ['Double column', 'mm', 180, ''], ['Slide 16:9', 'in', 11, 6.2]];
 const REGION_KEYS = ['chrom', 'start', 'end', 'assembly', 'numerator', 'denominator', 'highlights'];
@@ -291,6 +313,10 @@ function setSetting(k, v, { rerender } = {}) {
   if (rerender || DEP_KEYS.has(k)) renderSettings();
   if (k === 'title') renderCrumbs();
   if (k === 'rel_mode') { renderNeeds(); renderPlots(); }
+  if ((k === 'qc_sheet' || k === 'qc_matrix') && val('qc_sheet')) {
+    fetchQcPreview().then(d => { S.qcPreview = { ...d, sheet: val('qc_sheet'), matrix: val('qc_matrix') }; renderSettings(); }).catch(e => toast(e.message));
+  }
+  if (k === 'qc_sheet' || k === 'qc_matrix') { renderNeeds(); renderPlots(); }
   changed();
 }
 function chromList() {
@@ -311,7 +337,8 @@ const ICONS = [
     '<rect x="4" y="3" width="20" height="5" fill="#14403c"/><rect x="4" y="9" width="20" height="5" fill="#2a7f78"/><rect x="4" y="15" width="20" height="4" fill="#9fd0c8"/><rect x="25" y="3" width="2" height="5" fill="#c0714f"/><rect x="25" y="9" width="2" height="5" fill="#4f6d8f"/><rect x="25" y="15" width="2" height="4" fill="#d9a441"/>'],
   ['<rect x="6" y="2" width="6" height="6" fill="#b2182b"/><rect x="12" y="2" width="6" height="6" fill="#f4a582"/><rect x="18" y="2" width="6" height="6" fill="#92c5de"/><rect x="6" y="8" width="6" height="6" fill="#f4a582"/><rect x="12" y="8" width="6" height="6" fill="#b2182b"/><rect x="18" y="8" width="6" height="6" fill="#d1e5f0"/><rect x="6" y="14" width="6" height="6" fill="#92c5de"/><rect x="12" y="14" width="6" height="6" fill="#d1e5f0"/><rect x="18" y="14" width="6" height="6" fill="#b2182b"/>',
     '<path d="M4 19H27M4 19V2" stroke="#8a95a3" stroke-width=".8"/><circle cx="9" cy="14" r="2" fill="#2a7f78"/><circle cx="12" cy="12" r="2" fill="#2a7f78"/><circle cx="20" cy="6" r="2" fill="#c0714f"/><circle cx="23" cy="8" r="2" fill="#c0714f"/><circle cx="16" cy="15" r="2" fill="#4f6d8f"/>',
-    '<rect x="3" y="2" width="11" height="8" fill="none" stroke="#8a95a3" stroke-width=".6"/><rect x="16" y="2" width="11" height="8" fill="none" stroke="#8a95a3" stroke-width=".6"/><rect x="3" y="12" width="11" height="8" fill="none" stroke="#8a95a3" stroke-width=".6"/><rect x="16" y="12" width="11" height="8" fill="none" stroke="#8a95a3" stroke-width=".6"/><path d="M5 9l2-2 2-1 3-3" stroke="#2a7f78" stroke-width="1.2" fill="none" stroke-dasharray="1 1"/><path d="M18 18l3-3 3-1 2-1" stroke="#2a7f78" stroke-width="1.2" fill="none" stroke-dasharray="1 1"/><rect x="5" y="15" width="2" height="5" fill="#9fd0c8"/><rect x="8" y="13" width="2" height="7" fill="#9fd0c8"/><rect x="11" y="16" width="2" height="4" fill="#9fd0c8"/>'],
+    '<rect x="3" y="2" width="11" height="8" fill="none" stroke="#8a95a3" stroke-width=".6"/><rect x="16" y="2" width="11" height="8" fill="none" stroke="#8a95a3" stroke-width=".6"/><rect x="3" y="12" width="11" height="8" fill="none" stroke="#8a95a3" stroke-width=".6"/><rect x="16" y="12" width="11" height="8" fill="none" stroke="#8a95a3" stroke-width=".6"/><path d="M5 9l2-2 2-1 3-3" stroke="#2a7f78" stroke-width="1.2" fill="none" stroke-dasharray="1 1"/><path d="M18 18l3-3 3-1 2-1" stroke="#2a7f78" stroke-width="1.2" fill="none" stroke-dasharray="1 1"/><rect x="5" y="15" width="2" height="5" fill="#9fd0c8"/><rect x="8" y="13" width="2" height="7" fill="#9fd0c8"/><rect x="11" y="16" width="2" height="4" fill="#9fd0c8"/>',
+    '<rect x="3" y="3" width="24" height="16" rx="1.5" fill="none" stroke="#8a95a3" stroke-width=".8"/><path d="M3 7.5h24M3 11.5h24M3 15.5h24M10 3v16" stroke="#d3d9e0" stroke-width=".6"/><rect x="3.4" y="11.9" width="23.2" height="3.2" fill="#d1495b" opacity=".25"/><circle cx="6.5" cy="13.5" r="1.3" fill="#d1495b"/><circle cx="6.5" cy="5.3" r="1.1" fill="#2a7f78"/><circle cx="6.5" cy="9.5" r="1.1" fill="#2a7f78"/><circle cx="6.5" cy="17.3" r="1.1" fill="#2a7f78"/>'],
   ['<circle cx="15" cy="17" r="1.3" fill="#b9c0c8"/><circle cx="13" cy="15" r="1.3" fill="#b9c0c8"/><circle cx="17" cy="15.5" r="1.3" fill="#b9c0c8"/><circle cx="14.5" cy="13" r="1.3" fill="#b9c0c8"/><circle cx="8" cy="9" r="1.5" fill="#2a7f78"/><circle cx="5" cy="5" r="1.5" fill="#2a7f78"/><circle cx="22" cy="8" r="1.5" fill="#c0714f"/><circle cx="25" cy="4" r="1.5" fill="#c0714f"/><circle cx="20" cy="11" r="1.5" fill="#c0714f"/>',
     '<rect x="5" y="2" width="6" height="6" fill="#fde725"/><rect x="11" y="2" width="6" height="6" fill="#21918c"/><rect x="17" y="2" width="6" height="6" fill="#3b528b"/><rect x="11" y="8" width="6" height="6" fill="#fde725"/><rect x="17" y="8" width="6" height="6" fill="#5ec962"/><rect x="17" y="14" width="6" height="6" fill="#fde725"/>'],
   ['<path d="M2 8c3-5 5-5 7 0s4 2 6-1 5-4 7 0 4 2 6 1" fill="none" stroke="#2a7f78" stroke-width="1.3"/><path d="M2 9c3-2 5-3 7 0s4 0 6-3 5 0 7 1 4 0 6 0" fill="none" stroke="#c0714f" stroke-width="1.3"/><path d="M2 16h26" stroke="#8a95a3" stroke-width=".6" stroke-dasharray="1.5 1.5"/><path d="M4 16v-3M8 16v-5M12 16v2M16 16v-4M20 16v3M24 16v-2" stroke="#3b4252" stroke-width="2"/>',
@@ -400,7 +427,7 @@ function renderNeeds() {
 
 function renderFiles() {
   const list = $('#filelist');
-  const roles = [['signal', 'Signals'], ['regions', 'Regions'], ['genes', 'Annotation']];
+  const roles = [['signal', 'Signals'], ['regions', 'Regions'], ['genes', 'Annotation'], ['table', 'Tables']];
   const kids = [];
   if (!S.files.length) kids.push(h('p', { class: 'empty' }, readOnly() ? 'No files in this project.' : 'No files yet. Add your own with the drop zone above.'));
   for (const [role, title] of roles) {
@@ -418,7 +445,7 @@ function fileRow(f) {
   const color = fileColor(f);
   const open = S.openFile === f.id;
   const swatch = h('label', { class: 'swatch' + (color ? '' : ' none'), title: f.role === 'genes' ? 'Gene annotation' : 'Colour (click to change)', style: color ? { background: color } : null },
-    f.role !== 'genes' ? h('input', { type: 'color', value: color || '#888888', 'aria-label': 'Colour for ' + f.label,
+    !['genes', 'table'].includes(f.role) ? h('input', { type: 'color', value: color || '#888888', 'aria-label': 'Colour for ' + f.label,
       oninput: e => { f.color = e.target.value; swatch.style.background = f.color; },
       onchange: () => { filesChanged(); } }) : null);
   const label = h('input', { class: 'file-label', value: f.label, 'aria-label': 'Label', title: f.name,
@@ -458,7 +485,7 @@ function fileDetail(f) {
   return h('div', { class: 'file-detail' },
     h('div', { class: 'row' }, h('span', {}, 'Role'),
       h('select', { class: 'input', onchange: e => { f.role = e.target.value; S.openFile = f.id; filesChanged(); } },
-        ...[['signal', 'Signal (BigWig / bedGraph)'], ['regions', 'Regions (BED)'], ['genes', 'Genes (GTF)']].map(([v, t]) => h('option', { value: v, selected: f.role === v }, t)))),
+        ...[['signal', 'Signal (BigWig / bedGraph)'], ['regions', 'Regions (BED)'], ['genes', 'Genes (GTF)'], ['table', 'Table (sample sheet / matrix)']].map(([v, t]) => h('option', { value: v, selected: f.role === v }, t)))),
     h('div', { class: 'row' }, h('span', {}, 'Group'),
       h('input', { class: 'input', value: f.group || '', list: gid, placeholder: 'condition / sample group', onchange: e => { f.group = e.target.value.trim(); filesChanged(); } }),
       h('datalist', { id: gid }, ...groups.map(g => h('option', { value: g })))),
@@ -674,7 +701,7 @@ function renderSettings() {
     const fields = FIELDS.filter(f => f.sec === id && applies(f) && matchesSearch(f, q));
     if (!fields.length) continue;
     const changedCount = fields.filter(isChanged).length;
-    const det = h('details', { class: 'section', open: q || S.sections[id] ? true : null, 'data-sec': id },
+    const det = h('details', { class: 'section', open: q || S.sections[id] !== false ? true : null, 'data-sec': id },
       h('summary', {}, title, changedCount ? h('span', { class: 'count' }, `${changedCount} changed`) : null),
       h('div', { class: 'section-body' }, ...fields.map(renderField)));
     det.addEventListener('toggle', () => { if (!q) { S.sections[id] = det.open; persist(); } });
@@ -763,8 +790,76 @@ function renderField(f) {
         onclick: () => { S.settings.size_unit = u; S.settings.fig_width = w; S.settings.fig_height = hgt; setSetting('fig_width', w, { rerender: true }); },
       }, name)), h('button', { class: 'btn small ghost', type: 'button', onclick: () => { S.settings.fig_width = ''; S.settings.exact_size = false; setSetting('fig_height', '', { rerender: true }); } }, 'Auto')));
     case 'json': return advancedWidget(wrap);
+    case 'qcmap': return qcMapWidget(wrap);
   }
   return wrap;
+}
+/* ------------------------------------------------------------------ sample QC: sheet preview & column mapping */
+function tableOptions(kind) {
+  const tables = S.files.filter(f => f.role === 'table');
+  const rank = f => (f.info?.kind === kind ? 0 : 1);
+  return [['', tables.length ? 'Choose…' : 'No tables yet: upload a .tsv/.csv/.npz'], ...[...tables].sort((a, b) => rank(a) - rank(b)).map(f => [f.id, `${f.label}${f.info?.kind ? ' · ' + f.info.kind : ''}`])];
+}
+function qcColumns() { return S.qcPreview?.columns || []; }
+const QC_KEYS = ['qc_sample', 'qc_mark', 'qc_group', 'qc_batch', 'qc_filters'];
+async function fetchQcPreview(over = {}) {
+  const params = new URLSearchParams({ sheet: val('qc_sheet'), matrix: val('qc_matrix') || '' });
+  for (const k of QC_KEYS) { const v = k in over ? over[k] : val(k); if (v) params.set(k, v); }
+  return papi('/qc-preview?' + params);
+}
+function qcMapWidget(wrap) {
+  const p = S.qcPreview;
+  const fresh = p && p.sheet === val('qc_sheet') && p.matrix === val('qc_matrix');
+  const summary = !val('qc_sheet') ? 'Choose a sample sheet to preview it.'
+    : !fresh ? 'Preview the sheet to check columns and matches.'
+    : `${fmtBp(p.n_kept)} of ${fmtBp(p.n_rows)} rows kept` + (p.n_matched != null ? ` · ${fmtBp(p.n_matched)} matched to ${fmtBp(p.matrix_samples)} matrix samples` : '') +
+      (p.chosen ? ` · mark: ${p.chosen.mark || '?'} · group: ${p.chosen.group || '?'} · batch: ${p.chosen.batch || 'none'}` : '');
+  return put(wrap, h('div', { class: 'qc-map' },
+    h('div', { class: fresh && p.n_matched != null && p.n_matched < p.n_kept ? 'field-note' : 'help' }, summary),
+    h('button', { class: 'btn small', type: 'button', disabled: !val('qc_sheet'), onclick: openQcDialog }, 'Preview & map columns…')));
+}
+async function openQcDialog() {
+  let data;
+  try { data = await fetchQcPreview(); } catch (e) { toast(e.message); return; }
+  const pick = { ...Object.fromEntries(QC_KEYS.map(k => [k, val(k) || ''])) };
+  for (const k of ['sample', 'mark', 'group', 'batch']) if (!pick['qc_' + k]) pick['qc_' + k] = data.chosen?.[k] || '';
+  const body = h('div', { class: 'qc-dialog' });
+  const render = d => {
+    const stat = Object.fromEntries(d.stats.map(c => [c.column, c]));
+    const colSelect = (k, label, optional) => h('label', { class: 'dialog-field' }, h('span', {}, label),
+      h('select', { onchange: e => { pick[k] = e.target.value; refresh(); } },
+        optional ? h('option', { value: '', selected: !pick[k] }, '(none)') : null,
+        ...d.columns.map(c => h('option', { value: c, selected: c === pick[k] }, `${c} · ${stat[c].distinct} value${stat[c].distinct === 1 ? '' : 's'}`))));
+    const chosen = new Set(['qc_sample', 'qc_mark', 'qc_group', 'qc_batch'].map(k => pick[k]).filter(Boolean));
+    const shown = [...chosen, ...d.columns.filter(c => !chosen.has(c))];
+    const matchNote = d.n_matched == null ? 'No matrix chosen: sample matching is not checked.'
+      : `${fmtBp(d.n_matched)} of ${fmtBp(d.n_kept)} kept rows match the ${fmtBp(d.matrix_samples)} matrix samples` + (d.unmatched_rows?.length ? ` · unmatched: ${d.unmatched_rows.slice(0, 5).join(', ')}${d.unmatched_rows.length > 5 ? ' …' : ''}` : '');
+    fill(body,
+      h('div', { class: 'qc-grid' }, colSelect('qc_sample', 'Sample (matches matrix)'), colSelect('qc_mark', 'Mark / target'), colSelect('qc_group', 'Group'), colSelect('qc_batch', 'Batch', true)),
+      h('label', { class: 'dialog-field' }, h('span', {}, 'Keep rows (filters)'),
+        h('input', { value: pick.qc_filters, placeholder: 'status=PASS; replicate!=NA', onchange: e => { pick.qc_filters = e.target.value.trim(); refresh(); } }),
+        d.filter_error ? h('small', { class: 'err' }, d.filter_error) : h('small', {}, `${fmtBp(d.n_kept)} of ${fmtBp(d.n_rows)} rows kept`)),
+      h('div', { class: d.n_matched != null && d.n_matched < d.n_kept ? 'field-note' : 'help' }, matchNote),
+      d.marks ? h('div', { class: 'qc-tablewrap short' }, h('table', { class: 'qc-table' },
+        h('thead', {}, h('tr', {}, ...['mark', 'samples', 'groups', 'groups with 1 sample', 'tier'].map(t => h('th', {}, t)))),
+        h('tbody', {}, ...d.marks.map(m => h('tr', { class: m.singletons === m.groups ? 'warn' : '' },
+          h('td', {}, m.mark), h('td', {}, m.samples), h('td', {}, m.groups), h('td', {}, m.singletons), h('td', {}, m.tier)))))) : null,
+      h('div', { class: 'help' }, `First ${Math.min(d.rows.length, 200)} of ${fmtBp(d.n_rows)} rows (chosen columns first):`),
+      h('div', { class: 'qc-tablewrap' }, h('table', { class: 'qc-table' },
+        h('thead', {}, h('tr', {}, ...shown.map(c => h('th', { class: chosen.has(c) ? 'on' : '' }, c)))),
+        h('tbody', {}, ...d.rows.slice(0, 200).map(r => h('tr', {}, ...shown.map(c => h('td', { class: chosen.has(c) ? 'on' : '', title: r[c] }, r[c]))))))));
+  };
+  const refresh = debounce(async () => {
+    try { data = await fetchQcPreview(pick); render(data); } catch (e) { toast(e.message); }
+  }, 250);
+  render(data);
+  $('#dialog').classList.add('wide');
+  const ok = await ask({ title: 'Sample sheet: preview & columns', html: body, ok: 'Use these columns' });
+  $('#dialog').classList.remove('wide');
+  if (!ok) return;
+  for (const k of QC_KEYS) S.settings[k] = pick[k];
+  S.qcPreview = { ...data, sheet: val('qc_sheet'), matrix: val('qc_matrix') };
+  setSetting('qc_sample', pick.qc_sample, { rerender: true });
 }
 function autoGradient() {
   const c = paletteColors().slice(0, 3);
@@ -860,7 +955,7 @@ function payload() {
   const settings = effectiveSettings();
   return {
     category: S.category, plot: S.plot,
-    files: enabled().map(f => ({ id: f.id, role: f.role, group: f.group, label: f.label, color: f.color || '', cmap: f.cmap || '' })),
+    files: (S.category === 2 && S.plot === 3 ? [] : enabled().filter(f => f.role !== 'table')).map(f => ({ id: f.id, role: f.role, group: f.group, label: f.label, color: f.color || '', cmap: f.cmap || '' })),
     settings, title: settings.title || plotName(), palette: settings.palette, advanced,
   };
 }
@@ -916,9 +1011,12 @@ function showResult(data, request, revision) {
   $('#savebtn').disabled = readOnly();
   renderExportMenu();
   const pca = data.files?.find(f => f.name === 'pca.json');
+  const qc = data.files?.find(f => f.name === 'qc.json');
   S.current.interactive = pca ? pca.url : null;
-  $('#viewtoggle').hidden = !pca;
-  setView(pca ? S.view : 'static');
+  S.current.qc = qc ? qc.url : null;
+  $('#viewtoggle').hidden = !pca && !qc;
+  $$('#viewtoggle button').forEach(b => { b.hidden = b.dataset.view === 'interactive' ? !pca : b.dataset.view === 'table' ? !qc : false; });
+  setView(pca || qc ? S.view : 'static');
 }
 
 /* ------------------------------------------------------------------ interactive (Plotly) */
@@ -934,6 +1032,16 @@ function loadPlotly() {
   return plotlyLoading;
 }
 async function setView(view) {
+  const table = view === 'table' && S.current?.qc;
+  $('#qctable').hidden = !table;
+  if (table) {
+    $$('#viewtoggle button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === 'table')));
+    $('#figure').hidden = true; $('#interactive').hidden = true;
+    $('#paper').classList.add('interactive-on');
+    $('#zoom').style.visibility = 'hidden';
+    try { renderQcTable(await fetch(S.current.qc).then(r => r.json())); } catch (e) { toast(e.message); }
+    return;
+  }
   const interactive = view === 'interactive' && S.current?.interactive;
   $$('#viewtoggle button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === (interactive ? 'interactive' : 'static'))));
   $('#figure').hidden = !!interactive || !S.current;
@@ -974,6 +1082,29 @@ function renderPca(Plotly, data) {
     toImageButtonOptions: { format: 'svg', filename: slug(data.title) },
   };
   Plotly.react($('#interactive'), traces, layout, config);
+}
+const QC_STATUS = { mark_mismatch: 'mark mismatch', low_quality: 'low quality', swap: 'possible swap', mislabel: 'possible mislabel', mislabel_batch: 'mislabel or batch', undetermined: 'cannot check' };
+function renderQcTable(data) {
+  const counts = data.counts || {};
+  const cols = [['sample', 'Sample'], ['mark', 'Mark'], ['group', 'Group'], ['batch', 'Batch'], ['status', 'Status'], ['own_r', 'r own'], ['best_other_r', 'r other'], ['best_other_group', 'Closest other group'], ['nn_sample', 'Nearest sample'], ['reasons', 'Why']];
+  let showAll = false;
+  const draw = () => {
+    const rows = data.flags.filter(r => showAll || r.status !== 'undetermined');
+    fill($('#qctable'),
+      h('div', { class: 'qc-head' },
+        ...Object.entries(QC_STATUS).map(([k, t]) => counts[k] ? h('span', { class: 'chip qc-' + k }, `${t}: ${counts[k]}`) : null),
+        h('span', { class: 'chip ok' }, `ok: ${counts.ok || 0}`),
+        h('label', { class: 'dialog-check' }, h('input', { type: 'checkbox', checked: showAll, onchange: e => { showAll = e.target.checked; draw(); } }), 'show samples that cannot be checked')),
+      rows.length ? h('div', { class: 'qc-tablewrap tall' }, h('table', { class: 'qc-table' },
+        h('thead', {}, h('tr', {}, ...cols.map(([, t]) => h('th', {}, t)))),
+        h('tbody', {}, ...rows.map(r => h('tr', { class: 'qc-' + r.status }, ...cols.map(([k]) => {
+          const v = r[k];
+          const text = Array.isArray(v) ? v.join(' · ') : k === 'status' ? (QC_STATUS[v] || v) : v ?? '';
+          return h('td', { title: String(text) }, String(text));
+        })))))) : h('p', { class: 'empty' }, 'No samples flagged.'),
+      h('p', { class: 'help' }, 'Full table: Download → qc_flags.tsv · per-mark pages: qc_marks.pdf · per-mark PCA: qc_pca_by_mark.png'));
+  };
+  draw();
 }
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 function showError(message) {
@@ -1111,7 +1242,7 @@ async function loadProject(id) {
   S.advanced = saved?.advanced || '';
   S.history = []; S.current = null; S.figureId = null; S.openFile = null;
   $('#figure').hidden = true;
-  $('#interactive').hidden = true; $('#viewtoggle').hidden = true; $('#paper').classList.remove('interactive-on');
+  $('#interactive').hidden = true; $('#qctable').hidden = true; $('#viewtoggle').hidden = true; $('#paper').classList.remove('interactive-on');
   const ph = $('#placeholder');
   ph.hidden = false; ph.classList.remove('error');
   $('#savebtn').disabled = true;

@@ -61,7 +61,7 @@ CATALOG = [
     ),
     (
         "Sample relationships",
-        ["Correlation heatmap", "PCA scatter plot", "PairGrid scatter matrix"],
+        ["Correlation heatmap", "PCA scatter plot", "PairGrid scatter matrix", "Sample QC"],
     ),
     ("Differential analysis", ["Differential peak volcano", "Peak-center comparison heatmap"]),
     (
@@ -73,7 +73,7 @@ CATALOG = [
 REQUIREMENTS = [
     [dict(signal=1), dict(signal=2), dict(genes=1)],
     [dict(signal=1, regions=1)] * 4,
-    [dict(signal=2, regions=1)] * 3,
+    [dict(signal=2, regions=1)] * 3 + [dict(table=2)],
     [dict(signal=4, regions=1), dict(signal=1, regions=2)],
     [dict(signal=2)] * 4,
 ]
@@ -121,6 +121,9 @@ SUFFIXES = {
     ".bedgraph": "signal",
     ".bdg": "signal",
     ".bg": "signal",
+    ".tsv": "table",
+    ".csv": "table",
+    ".npz": "table",
     ".bed": "regions",
     ".narrowpeak": "regions",
     ".broadpeak": "regions",
@@ -190,7 +193,26 @@ def inspect_file(path: str | Path, role: str) -> dict:
     info: dict = dict(size=path.stat().st_size)
     suffix = path.suffix.lower()
     try:
-        if suffix in (".bw", ".bigwig"):
+        if role == "table" or suffix in (".tsv", ".csv", ".npz"):
+            from ..analysis.sample_qc import _coord_columns, matrix_samples
+
+            if suffix == ".npz":
+                info.update(kind="matrix", samples=len(matrix_samples(path)))
+            else:
+                with path.open(encoding="utf-8") as handle:
+                    header = handle.readline().rstrip("\n\r")
+                    rows = sum(1 for line in handle if line.strip())
+                names = [
+                    c.strip().strip("'\"#") for c in header.split("\t" if "\t" in header else ",")
+                ]
+                matrix = _coord_columns(names) == 3
+                info.update(
+                    kind="matrix" if matrix else "sample sheet",
+                    rows=rows,
+                    columns=len(names),
+                    samples=len(names) - 3 if matrix else rows,
+                )
+        elif suffix in (".bw", ".bigwig"):
             import pyBigWig
 
             handle = pyBigWig.open(str(path))
@@ -655,7 +677,7 @@ def run_plot(payload, records, destination, cache_dir=None):
     destination = Path(destination)
     category = integer(payload.get("category", 1), "Category", 0, 4)
     plot = integer(payload.get("plot", 0), "Plot", 0, len(CATALOG[category][1]) - 1)
-    if not records:
+    if not records and not (category == 2 and plot == 3):
         raise ValueError("Select at least one input file")
     options = payload.get("settings", {}) or {}
     if not isinstance(options, dict):
@@ -665,12 +687,21 @@ def run_plot(payload, records, destination, cache_dir=None):
     colors = palette_colors(options)
     records = [dict(r) for r in records]
     for record in records:
-        if record["role"] not in ("signal", "regions", "genes", "blacklist"):
+        if record["role"] not in (
+            "signal",
+            "regions",
+            "genes",
+            "blacklist",
+            "table",
+            "qc_sheet",
+            "qc_matrix",
+        ):
             raise ValueError(f"Unknown role for {record['name']}")
     signals = [r for r in records if r["role"] == "signal"]
     regions = [r for r in records if r["role"] == "regions"]
     genes = [r for r in records if r["role"] == "genes"]
     blacklist = [r for r in records if r["role"] == "blacklist"]
+    qc_inputs = {r["role"]: r for r in records if r["role"] in ("qc_sheet", "qc_matrix")}
     for index, record in enumerate(signals):
         record["color"] = valid_color(record.get("color") or "", colors[index % len(colors)])
     for index, record in enumerate(regions):
@@ -695,9 +726,13 @@ def run_plot(payload, records, destination, cache_dir=None):
     sources = {f"{r['label']}_{i + 1}": r["path"] for i, r in enumerate(signals)}
     names = list(sources)
     need = dict(REQUIREMENTS[category][plot])
+    if category == 2 and plot == 3 and len(qc_inputs) < 2:
+        raise ValueError(
+            "Sample QC needs a sample sheet and a signal matrix (Analysis → Sample QC)"
+        )
     if category == 2 and relationship_mode(options) != "regions":
         need.pop("regions", None)  # genome bins / sliding windows need only signals
-    have = dict(signal=len(signals), regions=len(regions), genes=len(genes))
+    have = dict(signal=len(signals), regions=len(regions), genes=len(genes), table=len(qc_inputs))
     if any(have[k] < n for k, n in need.items()):
         parts = [f"{n} {k} file{'s' if n > 1 else ''}" for k, n in need.items()]
         raise ValueError(f"{CATALOG[category][1][plot]} needs at least " + " and ".join(parts))
@@ -712,6 +747,7 @@ def run_plot(payload, records, destination, cache_dir=None):
         regions=regions,
         genes=genes,
         blacklist=blacklist,
+        qc_inputs=qc_inputs,
         names=names,
         sources=sources,
         colors=colors,
@@ -770,6 +806,8 @@ def run_plot(payload, records, destination, cache_dir=None):
         with plt.rc_context(rc_params(options, extra.get("rc"))):
             if category == 0:
                 draw_locus(context)
+            elif category == 2 and plot == 3:
+                draw_sample_qc(context)
             elif category in (1, 2, 3):
                 draw_regions(context)
             else:
@@ -1043,6 +1081,71 @@ def _check_window_budget(sources, params):
             f"{windows:,} windows × {len(sources)} samples is too large for one figure; use larger bins, "
             "a larger step, or restrict chromosomes"
         )
+
+
+def draw_sample_qc(ctx):
+    """Sample QC over a precomputed bins x samples matrix and a sample sheet (no BigWig reads)."""
+    from ..analysis import sample_qc_plots as qc_plots
+    from ..analysis.sample_qc import FLAG_COLUMNS, qc_from_files, sorted_rows, write_tables
+
+    inputs, destination = ctx["qc_inputs"], ctx["destination"]
+    result, notes = qc_from_files(
+        inputs["qc_sheet"]["path"], inputs["qc_matrix"]["path"], ctx["options"]
+    )
+    write_tables(result, destination)
+    qc_plots.pca_facets(result, destination / "qc_pca_by_mark")
+    qc_plots.mark_pages(result, destination / "qc_marks.pdf")
+    counts = Counter(row["status"] for row in result.rows)
+    flags = [
+        {k: row.get(k) for k in FLAG_COLUMNS}
+        for row in sorted_rows(result)
+        if row["status"] != "ok"
+    ]
+    (destination / "qc.json").write_text(
+        json.dumps(
+            dict(notes=notes, counts=counts, marks=result.mark_summary, flags=flags), default=str
+        )
+    )
+    ctx["notes"]["qc"] = dict(notes, counts=dict(counts), params=result.params)
+    if notes["unmatched"]:
+        ctx["warnings"].append(
+            f"{notes['after_filters'] - notes['matched']} sample-sheet rows have no matrix column "
+            f"(e.g. {', '.join(notes['unmatched'][:3])})"
+        )
+    blind = [
+        m["mark"]
+        for m in result.mark_summary
+        if m.get("singletons") == m.get("groups") and m["samples"] >= 3
+    ]
+    if blind:
+        ctx["warnings"].append(
+            "Every group has a single sample in "
+            + ", ".join(blind)
+            + ", so group labels there cannot be checked"
+        )
+    fig_size = ctx["fig_size"]
+    figure = plt.figure(figsize=(fig_size[0] or 17, fig_size[1] or 5.6), layout="constrained")
+    qc_plots.draw_overview(result, figure)
+    plt.close(figure)  # exported as figure.* by run_plot
+
+
+def _sample_qc_methods(ctx) -> str:
+    qc = ctx["notes"].get("qc", {})
+    params = qc.get("params", {})
+    bins = f"{qc['bin_size'] // 1000:g} kb genomic bins" if qc.get("bin_size") else "genomic bins"
+    method = params.get("method", "pearson").capitalize()
+    return (
+        f"Sample-level QC used a signal matrix of {qc.get('features', 0):,} {bins} for "
+        f"{qc.get('matched', 0)} samples. Values were log(x + 1)-transformed and the "
+        f"{params.get('top', 5000):,} most variable bins were used. {method} correlations were "
+        f"computed over all samples, and each sample's mark label was checked by a "
+        f"{params.get('k', 5)}-nearest-neighbour vote. Within each mark, correlations were "
+        "recomputed on that mark's most variable bins; a sample was called low quality when both "
+        "its best correlation overall and its best correlation with other groups fell more than "
+        f"{params.get('z', 3):g} robust SDs (MAD, Fisher z scale) below the mark median, and "
+        "possibly mislabelled when its nearest member of another group exceeded its nearest "
+        f"member of its own group by more than {params.get('margin', 0.02):g} in r."
+    )
 
 
 def draw_regions(ctx):
@@ -1608,6 +1711,8 @@ def methods_text(ctx) -> str:
                 f"Mean signal within ±{options.get('center_bins', 5)} bins of the centre was compared between "
                 "region sets with two-sided Mann–Whitney U tests (p-values not adjusted)."
             )
+    elif category == 2 and plot == 3:
+        parts.append(_sample_qc_methods(ctx))
     elif category == 2:
         parts.append(_summary_methods(ctx, sig))
         if plot == 0:

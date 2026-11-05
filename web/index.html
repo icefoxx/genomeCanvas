@@ -53,7 +53,7 @@
         <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload files">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
           <div><strong>Drop files</strong> or click to add your own</div>
-          <small>BigWig · bedGraph · BED / narrowPeak / broadPeak · GTF</small>
+          <small>BigWig · bedGraph · BED / narrowPeak / broadPeak · GTF · TSV / CSV / NPZ tables</small>
           <input type="file" id="fileinput" multiple hidden accept=".bw,.bigwig,.bedgraph,.bdg,.bg,.bed,.narrowpeak,.broadpeak,.gtf">
         </div>
         <div id="uploads"></div>
@@ -73,6 +73,7 @@
           <div class="seg small" id="viewtoggle" aria-label="View" hidden>
             <button data-view="interactive" title="Hover for details; drag labels to tidy them">Interactive</button>
             <button data-view="static" title="The exported PNG/PDF/SVG">Static</button>
+            <button data-view="table" title="Flagged samples" hidden>Table</button>
           </div>
           <div class="seg small" id="zoom" aria-label="Zoom">
             <button data-zoom="out" title="Zoom out">−</button>
@@ -97,6 +98,7 @@
           </div>
           <img id="figure" alt="" hidden>
           <div id="interactive" class="interactive" hidden></div>
+          <div id="qctable" class="qctable" hidden></div>
         </div>
         <div id="busy" class="busy" hidden><div class="spinner"></div><span id="busytext">Plotting…</span></div>
       </div>

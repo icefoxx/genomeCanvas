@@ -457,6 +457,8 @@ def make_handler(app: Studio):
                 return self.send({"hits": gene_search(paths, query.get("q", ""))})
             if rest == ["jobs"] and method == "POST":
                 return self.submit_job(user, project)
+            if rest == ["qc-preview"] and method == "GET":
+                return self.qc_preview(project, query)
             if rest == ["figures"] and method == "GET":
                 rows = app.db.all(
                     "SELECT f.*, u.email AS author, j.status AS job_status FROM figures f "
@@ -571,10 +573,35 @@ def make_handler(app: Studio):
             return self.send(public_file({**row, "info": info}, "editor"), 201)
 
         # ---------------------------------------------------- jobs & results
+        def qc_preview(self, project, query):
+            from ..analysis.sample_qc import preview
+
+            if not query.get("sheet"):
+                raise HttpError(400, "Choose a sample sheet")
+            ids = [query["sheet"]] + ([query["matrix"]] if query.get("matrix") else [])
+            records = app.projects.resolve(project, [{"id": i, "role": "table"} for i in ids])
+            options = {k: v for k, v in query.items() if k.startswith("qc_")}
+            try:
+                out = preview(
+                    records[0]["path"], records[1]["path"] if len(records) > 1 else None, options
+                )
+            except (OSError, UnicodeDecodeError, KeyError) as exc:
+                raise HttpError(400, f"Cannot read that file as a table: {exc}") from exc
+            return self.send(out)
+
         def submit_job(self, user, project):
             body = self.json_body()
-            records = app.projects.resolve(project, body.get("files"))
             settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
+            sample_qc = body.get("category") == 2 and body.get("plot") == 3
+            # Sample QC reads only the sheet and matrix chosen in its settings.
+            records = [] if sample_qc else app.projects.resolve(project, body.get("files"))
+            if sample_qc:
+                for key in ("qc_sheet", "qc_matrix"):
+                    if settings.get(key):
+                        (item,) = app.projects.resolve(
+                            project, [{"id": settings[key], "role": "table"}]
+                        )
+                        records.append({**item, "role": key})
             if settings.get("rel_blacklist"):
                 # The blacklist is authorised like any other input, then tagged so it is not plotted.
                 (black,) = app.projects.resolve(

@@ -1,0 +1,34 @@
+{
+  "plot": "tracks/overlay",
+  "files": [
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_Ctcf.bw",
+      "role": "signal",
+      "label": "CTCF",
+      "group": "TF"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_Oct4.bw",
+      "role": "signal",
+      "label": "OCT4",
+      "group": "TF"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_Nanog.bw",
+      "role": "signal",
+      "label": "NANOG",
+      "group": "TF"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/chr6_refGene.gtf",
+      "role": "genes",
+      "label": "refGene"
+    }
+  ],
+  "settings": {
+    "chrom": "chr6",
+    "start": 31125000,
+    "end": 31145000,
+    "assembly": "hg19"
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "plot": "relationships/pca",
+  "files": [
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k4me3.bw",
+      "role": "signal",
+      "label": "H3K4me3",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k27ac.bw",
+      "role": "signal",
+      "label": "H3K27ac",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k4me1.bw",
+      "role": "signal",
+      "label": "H3K4me1",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_H2az.bw",
+      "role": "signal",
+      "label": "H2A.Z",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_Ctcf.bw",
+      "role": "signal",
+      "label": "CTCF",
+      "group": "TF"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_Oct4.bw",
+      "role": "signal",
+      "label": "OCT4",
+      "group": "TF"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_Nanog.bw",
+      "role": "signal",
+      "label": "NANOG",
+      "group": "TF"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/narrowpeak/H1_k4me1.bed",
+      "role": "regions",
+      "label": "H3K4me1 peaks"
+    }
+  ],
+  "settings": {
+    "rel_mode": "regions",
+    "pca_top": 1000,
+    "log": "log2"
+  }
+}

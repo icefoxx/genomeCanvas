@@ -1,0 +1,24 @@
+{
+  "plot": "differential/peak-center",
+  "files": [
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k4me3.bw",
+      "role": "signal",
+      "label": "H3K4me3",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/narrowpeak/H1_k4me1.bed",
+      "role": "regions",
+      "label": "H3K4me1 peaks"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/narrowpeak/H1_Oct4.bed",
+      "role": "regions",
+      "label": "OCT4 peaks"
+    }
+  ],
+  "settings": {
+    "center_bins": 5
+  }
+}

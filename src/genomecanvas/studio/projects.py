@@ -486,7 +486,7 @@ class Projects:
                     "A selected file is not available in this project; refresh the page"
                 )
             role = item.get("role") or row["role"]
-            if role not in ("signal", "regions", "genes"):
+            if role not in ("signal", "regions", "genes", "table"):
                 raise ValueError("Unknown file role")
             records.append(
                 dict(

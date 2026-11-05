@@ -1,0 +1,46 @@
+{
+  "plot": "tracks/stacked",
+  "files": [
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k4me3.bw",
+      "role": "signal",
+      "label": "H3K4me3",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k27ac.bw",
+      "role": "signal",
+      "label": "H3K27ac",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_k4me1.bw",
+      "role": "signal",
+      "label": "H3K4me1",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/bw/H1_H2az.bw",
+      "role": "signal",
+      "label": "H2A.Z",
+      "group": "Histone"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/narrowpeak/H1_chromHMM.bed",
+      "role": "regions",
+      "label": "chromHMM states"
+    },
+    {
+      "path": "../../../tests/fixtures/trackplot_demo/chr6_refGene.gtf",
+      "role": "genes",
+      "label": "refGene"
+    }
+  ],
+  "settings": {
+    "chrom": "chr6",
+    "start": 31125000,
+    "end": 31145000,
+    "assembly": "hg19",
+    "highlights": "31136000-31138000 #f5c542 0.25"
+  }
+}
