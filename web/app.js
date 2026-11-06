@@ -241,7 +241,7 @@ const FIELDS = [
   { k: 'bg_flank', l: 'Background flank (bp)', t: 'number', sec: 'analysis', d: 5000, min: 20, step: 500, when: (c, p) => c === 4 && p === 3 },
   { k: 'pixels', l: 'Resolution (bins)', t: 'number', sec: 'analysis', d: 800, min: 50, max: 5000, step: 50, when: C(4) },
   // Track layout
-  { k: 'scale', l: 'Y scale', t: 'select', sec: 'tracks', d: 'auto_highest', o: [['auto_highest', 'Shared across tracks'], ['per_track', 'Independent per track']], when: C(0) },
+  { k: 'scale', l: 'Y scale', t: 'select', sec: 'tracks', d: 'auto', o: [['auto', 'Auto (share between comparable tracks)'], ['auto_highest', 'Shared across tracks'], ['per_track', 'Independent per track']], when: C(0) },
   { k: 'transcripts', l: 'Transcripts', t: 'select', sec: 'tracks', d: 'collapsed', o: [['collapsed', 'Collapse per gene'], ['individual', 'Show all']], when: C(0) },
   { k: 'gene_label', l: 'Gene labels', t: 'select', sec: 'tracks', d: 'name', o: [['name', 'Gene name'], ['id', 'Gene ID'], ['none', 'None']], when: C(0) },
   { k: 'x_tick_unit', l: 'Coordinate unit', t: 'select', sec: 'tracks', d: 'auto', o: ['auto', 'bp', 'kb', 'Mb'], when: C(0) },

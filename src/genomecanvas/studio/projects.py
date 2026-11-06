@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import re
 import shutil
 import time
@@ -334,7 +335,9 @@ class Projects:
             if not rel:
                 report["warnings"].append(f"{manifest.name} line {number}: missing 'file' column")
                 continue
-            path = (folder / rel).resolve()
+            # Lexical check: a manifest row may be a symlink inside the project folder that points
+            # at the original deliverable elsewhere (the manifest is written by the core, not users).
+            path = Path(os.path.normpath(folder / rel))
             if not path.is_relative_to(folder) or not path.is_file():
                 report["warnings"].append(
                     f"{manifest.name} line {number}: {rel} not found in project folder"

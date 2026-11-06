@@ -879,7 +879,15 @@ def draw_locus(ctx):
             )
         )
     if genes:
-        tracks.append(dict(id="genes", type="gene", source={"path": genes[0]["path"]}))
+        tracks.append(
+            dict(
+                id="genes",
+                type="gene",
+                source={"path": genes[0]["path"]},
+                # the renderer reads label_mode (layout.transcript_label defaults to "id")
+                style={"label_mode": options.get("gene_label", "name") or "name"},
+            )
+        )
     fig_size = ctx["fig_size"]
     layout = {
         "width": fig_size[0] or 9,
@@ -910,7 +918,7 @@ def draw_locus(ctx):
             tracks=tracks,
             highlights=parse_highlights(options.get("highlights"), ctx["colors"][-1]),
             collapse_transcripts=options.get("transcripts", "collapsed") == "collapsed",
-            scales={"mode": options.get("scale", "auto_highest")},
+            scales={"mode": options.get("scale", "auto")},
             layout=layout,
             style=style,
         )
@@ -1657,10 +1665,12 @@ def methods_text(ctx) -> str:
             f"({options.get('assembly') or 'assembly not specified'}) were drawn from {sig}"
             + (", with gene models from a GTF annotation" if ctx["genes"] else "")
             + ". Signal was summarised per display bin; y-axes were "
-            + (
-                "shared across tracks."
-                if options.get("scale", "auto_highest") == "auto_highest"
-                else "scaled per track."
+            + {
+                "auto_highest": "shared across tracks.",
+                "per_track": "scaled per track.",
+            }.get(
+                options.get("scale", "auto"),
+                "shared among tracks whose maxima are within 3-fold of each other.",
             )
         )
     elif category in (1, 3) and not (category == 3 and plot == 0):

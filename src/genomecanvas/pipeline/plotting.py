@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import MaxNLocator
 from ..render.plotting import save_figure
 from .matrix import EnrichmentMatrix
 from .plot_style import (
@@ -90,18 +92,19 @@ def plot_enrichment_heatmap(
     bar_axes = []
     heat_row = 1 if opts.show_profile else 0
     images = []
-    shared_norm: Normalize | None = None
-    if opts.show_colorbar and not opts.independent_scale:
-        shared_vmin, shared_vmax = _global_limits(matrix, opts)
-        shared_norm = Normalize(vmin=shared_vmin, vmax=shared_vmax)
+    blocks = [
+        scale_values(matrix.sample_block(column), opts.plot_scale)
+        for column in range(len(matrix.sample_labels))
+    ]
+    limits = heatmap_limits(blocks, opts, matrix.meta_groups)
 
     plt.rcParams["font.family"] = opts.font_family
     for column, label in enumerate(matrix.sample_labels):
-        block = scale_values(matrix.sample_block(column), opts.plot_scale)
+        block = blocks[column]
         cmap = _colormap(
             opts.cmap or (matrix.colormaps[column] if column < len(matrix.colormaps) else "Blues")
         )
-        vmin, vmax = _panel_limits(block, opts, shared_norm)
+        vmin, vmax = limits[column]
         if opts.show_profile:
             axis = figure.add_subplot(grid[0, column])
             profile_axes.append(axis)
@@ -115,8 +118,6 @@ def plot_enrichment_heatmap(
                 x0,
                 x1,
             )
-            if column:
-                axis.tick_params(labelleft=False)
             axis.set_title(sample_titles[column], fontsize=opts.sample_label_size, pad=6)
         heat = figure.add_subplot(
             grid[heat_row, column], sharex=profile_axes[column] if profile_axes else None
@@ -160,6 +161,8 @@ def plot_enrichment_heatmap(
                 opts.colorbar_label if column == n_cols // 2 else "", fontsize=opts.legend_size
             )
         heat.set_xlabel("")
+    if profile_axes:
+        _apply_profile_ylims(profile_axes, opts, matrix.meta_groups)
     if heat_axes:
         xlabel = opts.xlab if opts.xlab is not None else _default_xlab(matrix)
         figure.text(0.5, 0.035, xlabel, ha="center", va="top", fontsize=opts.axis_label_size)
@@ -289,30 +292,107 @@ def _default_xlab(matrix: EnrichmentMatrix) -> str:
     return f"distance from {point} (bp)"
 
 
-def _panel_limits(
-    block: np.ndarray,  # type: ignore[type-arg]
-    opts: HeatmapPlotStyle,
-    shared: Normalize | None,
-) -> tuple[float, float]:
-    if shared is not None:
-        return float(shared.vmin), float(shared.vmax)  # type: ignore[arg-type]
+def _auto_limits(block: np.ndarray, opts: HeatmapPlotStyle) -> tuple[float, float]:  # type: ignore[type-arg]
+    """1st-99th percentile colour range of one panel (floored at 0 on a linear scale)."""
     finite = block[np.isfinite(block)]
-    if opts.autoscale or (opts.zmin is None and opts.zmax is None):
-        if finite.size == 0:
-            return 0.0, 1.0
-        low = float(np.nanpercentile(finite, 1))
-        high = float(np.nanpercentile(finite, 99))
-        if high <= low:
-            high = low + 1e-6
-        return max(low, 0.0) if opts.plot_scale == "linear" else low, high
-    vmin = 0.0 if opts.zmin is None else float(opts.zmin)
-    vmax = float(np.nanpercentile(finite, 99) or 1.0) if opts.zmax is None else float(opts.zmax)
-    return vmin, max(vmax, vmin + 1e-9)
+    if finite.size == 0:
+        return 0.0, 1.0
+    low = float(np.nanpercentile(finite, 1))
+    high = float(np.nanpercentile(finite, 99))
+    if opts.plot_scale == "linear":
+        low = max(low, 0.0)
+    if high <= low:
+        high = low + 1e-6
+    return low, high
 
 
-def _global_limits(matrix: EnrichmentMatrix, opts: HeatmapPlotStyle) -> tuple[float, float]:
-    scaled = scale_values(matrix.values, opts.plot_scale)
-    return _panel_limits(scaled, opts, None)
+def scale_groups(
+    values: Sequence[float],
+    mode: str = "auto",
+    ratio: float = 2.0,
+    labels: Sequence[str] | None = None,
+) -> list[int]:
+    """Assign panels to scale-sharing groups; panels in one group get one common range.
+
+    ``auto`` sorts the panels by ``values`` (a range maximum or span) and starts a new group
+    whenever a value exceeds ``ratio`` times the smallest value of the current group, so every
+    group spans at most ``ratio``-fold. ``group`` shares within equal ``labels`` (metaGrp).
+    Group ids are numbered in column order.
+    """
+    n = len(values)
+    if mode == "shared":
+        raw = [0] * n
+    elif mode == "independent":
+        raw = list(range(n))
+    elif mode == "group":
+        if not labels or len(labels) < n:
+            raw = list(range(n))
+        else:
+            ids: dict[str, int] = {}
+            raw = [ids.setdefault(str(labels[i]), len(ids)) for i in range(n)]
+    elif mode == "auto":
+        if ratio < 1:
+            raise ValueError("scale ratio must be >= 1")
+        raw = [0] * n
+        finite = [i for i in range(n) if np.isfinite(values[i]) and values[i] > 0]
+        ordered = sorted(finite, key=lambda k: values[k])
+        # Divisive split: cut a run at its largest fold gap until each run spans <= ratio.
+        pending, runs = ([ordered] if ordered else []), []
+        while pending:
+            run = pending.pop()
+            if len(run) < 2 or values[run[-1]] <= values[run[0]] * ratio:
+                runs.append(run)
+                continue
+            gaps = [values[run[k + 1]] / values[run[k]] for k in range(len(run) - 1)]
+            cut = int(np.argmax(gaps)) + 1
+            pending.extend([run[cut:], run[:cut]])
+        for gid, run in enumerate(runs):
+            for i in run:
+                raw[i] = gid
+        gid = len(runs) - 1
+        for i in range(n):
+            if i not in finite:
+                gid += 1
+                raw[i] = gid
+    else:
+        raise ValueError(f"unknown scale mode {mode!r}; use auto, shared, independent or group")
+    order: dict[int, int] = {}
+    return [order.setdefault(g, len(order)) for g in raw]
+
+
+def _pool_limits(
+    limits: list[tuple[float, float]], groups: list[int]
+) -> list[tuple[float, float]]:
+    pooled: dict[int, tuple[float, float]] = {}
+    for (low, high), group in zip(limits, groups, strict=True):
+        if group in pooled:
+            plow, phigh = pooled[group]
+            pooled[group] = (min(plow, low), max(phigh, high))
+        else:
+            pooled[group] = (low, high)
+    return [pooled[group] for group in groups]
+
+
+def heatmap_limits(
+    blocks: list,
+    opts: HeatmapPlotStyle,
+    meta_groups: Sequence[str] | None = None,
+) -> list[tuple[float, float]]:
+    """Colour range for every sample column (zscale mode, then zmin/zmax overrides)."""
+    natural = [_auto_limits(block, opts) for block in blocks]
+    mode = opts.zscale if opts.independent_scale else "shared"  # one colour bar = one range
+    groups = scale_groups([high for _, high in natural], mode, opts.zscale_ratio, meta_groups)
+    pooled = _pool_limits(natural, groups)
+    if opts.autoscale:
+        return pooled
+    final = []
+    for index, (low, high) in enumerate(pooled):
+        user_low = _per_sample(opts.zmin, index)
+        user_high = _per_sample(opts.zmax, index)
+        low = 0.0 if user_low is None else user_low
+        high = high if user_high is None else user_high
+        final.append((low, max(high, low + 1e-9)))
+    return final
 
 
 def _draw_profile_panel(
@@ -350,18 +430,56 @@ def _draw_profile_panel(
             x, mean, linewidth=opts.linewidth, label=group, color=line_color, linestyle=dashes
         )
     axis.set_xlim(x0, x1)
-    if opts.profile_ymin is not None or opts.profile_ymax is not None:
-        ymin, ymax = axis.get_ylim()
-        axis.set_ylim(
-            opts.profile_ymin if opts.profile_ymin is not None else ymin,
-            opts.profile_ymax if opts.profile_ymax is not None else ymax,
-        )
     if opts.ln_v:
         _vertical_guides(axis, matrix, x0, x1)
     axis.spines[["top", "right", "bottom"]].set_visible(False)
     axis.tick_params(labelbottom=False, bottom=False, labelsize=opts.tick_size, length=3)
     if column == len(matrix.sample_labels) - 1 and len(matrix.group_labels) > 1:
         axis.legend(frameon=False, fontsize=opts.legend_size, loc="upper right")
+
+
+def _per_sample(value, index: int) -> float | None:
+    """Resolve a scalar-or-per-sample y-limit setting for one panel."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float, np.floating, np.integer)):
+        return float(value)
+    items = list(value)
+    if len(items) == 1:  # one value broadcasts to every panel
+        index = 0
+    if index >= len(items) or items[index] is None:
+        return None
+    return float(items[index])
+
+
+def _apply_profile_ylims(
+    axes: list, opts: HeatmapPlotStyle, meta_groups: Sequence[str] | None = None
+) -> None:
+    """Set profile-panel y limits: grouped by ``profile_yaxis``, then per-panel overrides.
+
+    A panel shows tick labels when its limits differ from the panel to its left, so an
+    unlabeled panel always reads off the nearest labeled axis.
+    """
+    natural = [tuple(float(v) for v in axis.get_ylim()) for axis in axes]
+    groups = scale_groups(
+        [high - low for low, high in natural], opts.profile_yaxis, opts.profile_share_ratio,
+        meta_groups,
+    )
+    pooled = _pool_limits(natural, groups)  # type: ignore[arg-type]
+    final: list[tuple[float, float]] = []
+    for index, (axis, (low, high)) in enumerate(zip(axes, pooled, strict=True)):
+        user_low = _per_sample(opts.profile_ymin, index)
+        user_high = _per_sample(opts.profile_ymax, index)
+        low = low if user_low is None else user_low
+        high = high if user_high is None else user_high
+        if high <= low:
+            high = low + (abs(low) * 1e-3 or 1e-6)
+        axis.set_ylim(low, high)
+        final.append((low, high))
+    for index, axis in enumerate(axes):
+        axis.yaxis.set_major_locator(MaxNLocator(nbins=4))
+        same_as_left = index > 0 and np.allclose(final[index], final[index - 1], rtol=1e-9, atol=0)
+        axis.tick_params(labelleft=not same_as_left)
 
 
 def _vertical_guides(axis, matrix: EnrichmentMatrix, x0: float, x1: float) -> None:

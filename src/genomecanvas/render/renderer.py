@@ -63,13 +63,26 @@ def _limits(
             np.array([0.0, 1.0])
         )
         return {track.id: shared for track in signal_tracks}
+    auto_group: dict[str, str] = {}
+    if mode == "auto":
+        # Tracks whose maxima are within ``ratio``-fold share one axis; a much weaker track
+        # (e.g. MNase next to ChIP) gets its own instead of being drawn flat.
+        from ..pipeline.plotting import scale_groups
+
+        scored = [track for track in signal_tracks if values.get(track.id) is not None]
+        peaks = []
+        for track in scored:
+            finite = values[track.id][np.isfinite(values[track.id])]
+            peaks.append(float(finite.max()) if finite.size else float("nan"))
+        ids = scale_groups(peaks, "auto", float(config.get("ratio", 3.0)))
+        auto_group = {track.id: f"__auto_{gid}" for track, gid in zip(scored, ids)}
     groups: dict[str, list[float]] = {}
     for track in signal_tracks:
         array = values.get(track.id)
         if array is None:
             continue
         finite = array[np.isfinite(array)]
-        group = str(track.scale_group or "__all_signal_tracks__")
+        group = str(track.scale_group or auto_group.get(track.id) or "__all_signal_tracks__")
         groups.setdefault(group, []).extend(float(item) for item in finite)
     for track in signal_tracks:
         style = track.style
@@ -85,8 +98,8 @@ def _limits(
             if ymax <= ymin:
                 ymax = ymin + 1.0
             result[track.id] = (ymin, ymax)
-        elif mode in {"shared_group", "auto_highest", "shared_robust"}:
-            group = str(track.scale_group or "__all_signal_tracks__")
+        elif mode in {"shared_group", "auto_highest", "shared_robust", "auto"}:
+            group = str(track.scale_group or auto_group.get(track.id) or "__all_signal_tracks__")
             policy = (
                 ScaleSpec("robust", quantile=float(config.get("quantile", 0.99)))
                 if mode == "shared_robust"
@@ -461,9 +474,11 @@ def _configure_y(axis: Any, spec: FigureSpec, ymin: float, ymax: float) -> None:
         labelsize=spec.style.tick_font.size,
         labelcolor=spec.style.tick_font.color,
     )
-    axis.yaxis.set_major_formatter(
-        FuncFormatter(lambda value, _: f"{value:.{spec.layout.y_tick_decimals}f}")
-    )
+    # Use at least enough decimals to tell the ticks apart (e.g. 0.015 / 0.03, not 0 / 0).
+    step = abs(float(ticks[-1]) - float(ticks[0])) / max(len(ticks) - 1, 1) if ticks.size > 1 else abs(ymax)
+    needed = int(np.ceil(-np.log10(step))) if np.isfinite(step) and 0 < step < 1 else 0
+    decimals = min(max(spec.layout.y_tick_decimals, needed), 8)
+    axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:.{decimals}f}"))
 
 
 def _display_values(

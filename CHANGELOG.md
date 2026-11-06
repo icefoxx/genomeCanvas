@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Heatmap colour (z) scale and profile y axis: new `auto` default groups panels whose ranges are within a set fold (`--zScale/--zScaleRatio`, `--profileYAxis/--profileShareRatio`; modes auto, shared, independent, group); `--zMin/--zMax` and new `--profileYMin/--profileYMax` accept one value or one per sample.
+- Locus tracks: new `auto` y-scale mode (Studio default) shares an axis only between tracks within 3-fold; tick labels get enough decimals for small signals.
+- Studio: gene labels now show gene names (the gene track ignored the label setting and showed IDs); manifest rows may be symlinks inside the project folder.
 - Added Sample QC for large ChIP-seq collections (`gcanvas-sampleqc`, Studio "Sample relationships → Sample QC"): parallel, resumable bins × samples matrix builder; kNN mark-label check; per-mark group check with low-quality, mislabel, swap and batch-confounded flags; flag table, per-mark PCA and heatmap pages; Studio sample-sheet preview with column mapping and filters.
 - Studio accepts table files (`.tsv`, `.csv`, `.npz`) as a new `table` role.
 - Added `skills/`: agent skills for every Studio plot with one runner (`gcplot.py`) for local and server use.

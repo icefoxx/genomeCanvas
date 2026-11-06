@@ -264,6 +264,25 @@ def test_manifest_drives_labels_groups_colours(studio):
     assert any("missing.bw" in w for w in app.projects.scan("P1")["warnings"])
 
 
+def test_manifest_accepts_symlinks_but_not_escapes(tmp_path):
+    root = tmp_path / "deliveries"
+    folder = root / "PS"
+    (folder / "bw").mkdir(parents=True)
+    elsewhere = tmp_path / "original"
+    elsewhere.mkdir()
+    shutil.copy(FIX / "bw" / "H1_k4me3.bw", elsewhere / "k4.bw")
+    (folder / "bw" / "k4.bw").symlink_to(elsewhere / "k4.bw")
+    (folder / "samples.tsv").write_text("file\tlabel\nbw/k4.bw\tK4\n../../original/k4.bw\tOut\n")
+    config = make_config(tmp_path, root)
+    config.workspace_path.mkdir(parents=True, exist_ok=True)
+    projects = Projects(Database(config.db_path), config)
+    projects.create("PS", data_dir="PS")
+    report = projects.scan("PS")
+    labels = [f["label"] for f in projects.files(projects.db.one("SELECT * FROM projects WHERE id = 'PS'"))]
+    assert labels == ["K4"]
+    assert any("original/k4.bw" in w for w in report["warnings"])
+
+
 def test_project_paths_cannot_escape_data_root(studio):
     app, _ = studio
     with pytest.raises(ValueError, match="under data_root"):

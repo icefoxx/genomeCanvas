@@ -9,6 +9,8 @@ import numpy as np
 
 PlotScale = Literal["linear", "log2", "zscore"]
 DistanceUnit = Literal["auto", "bp", "kb", "Mb"]
+ScaleMode = Literal["auto", "shared", "independent", "group"]
+ProfileYAxis = ScaleMode  # backwards-compatible alias
 LegendLoc = Literal[
     "best", "upper right", "upper left", "lower left", "lower right",
     "right", "center left", "center right", "lower center", "upper center", "center",
@@ -28,8 +30,16 @@ class HeatmapPlotStyle:
     show_colorbar: bool = True
     independent_scale: bool = True
     autoscale: bool = True
-    zmin: float | None = None
-    zmax: float | None = None
+    # Heatmap colour (z) scale across sample columns, used with per-panel colour bars
+    # (independent_scale=True). "auto" groups panels whose 1-99th percentile maxima are within
+    # ``zscale_ratio``-fold and gives each group one shared range, so comparable tracks read on
+    # the same scale while a much weaker track is not washed out; "shared" = one range for all,
+    # "independent" = each panel its own, "group" = share within the metadata metaGrp.
+    # ``zmin`` / ``zmax`` take one value or one per sample (None = automatic) and win over it.
+    zscale: ScaleMode = "auto"
+    zscale_ratio: float = 2.0
+    zmin: float | Sequence[float | None] | None = None
+    zmax: float | Sequence[float | None] | None = None
     plot_scale: PlotScale = "linear"
     ln_v: bool = True
     ln_h: bool = True
@@ -51,8 +61,14 @@ class HeatmapPlotStyle:
     x_unit: DistanceUnit = "auto"
     show_row_numbers: bool = False
     show_group_labels: bool = True
-    profile_ymin: float | None = None
-    profile_ymax: float | None = None
+    # Profile-panel y axis, same modes as ``zscale``: "auto" groups panels whose data spans are
+    # within ``profile_share_ratio``-fold and gives each group one shared axis. A panel shows its
+    # own tick labels whenever its limits differ from the panel to its left.
+    # ``profile_ymin`` / ``profile_ymax`` take one value or one per sample and win over the mode.
+    profile_yaxis: ScaleMode = "auto"
+    profile_share_ratio: float = 3.0
+    profile_ymin: float | Sequence[float | None] | None = None
+    profile_ymax: float | Sequence[float | None] | None = None
     cmap: str | None = None
     dpi: int = 180
 

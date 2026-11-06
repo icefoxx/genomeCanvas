@@ -59,8 +59,43 @@ def run_heatmap(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--errorEstimates", default=True, dest="error_estimates")
     parser.add_argument("--lnV", default=True, dest="ln_v")
-    parser.add_argument("--zMin", type=float, default=None, dest="zmin")
-    parser.add_argument("--zMax", type=float, default=None, dest="zmax")
+    parser.add_argument(
+        "--zMin", default="", dest="zmin",
+        help="heatmap colour minimum: one value or a comma list per sample ('auto' = automatic)",
+    )
+    parser.add_argument(
+        "--zMax", default="", dest="zmax",
+        help="heatmap colour maximum: one value or a comma list per sample ('auto' = automatic)",
+    )
+    parser.add_argument(
+        "--zScale", choices=["auto", "shared", "independent", "group"], default="auto",
+        dest="zscale",
+        help="heatmap colour scale across samples: auto (samples whose ranges are within "
+        "--zScaleRatio-fold share one scale), shared, independent, or group (by metaGrp)",
+    )
+    parser.add_argument(
+        "--zScaleRatio", type=float, default=2.0, dest="zscale_ratio",
+        help="max fold difference between colour ranges that --zScale auto puts on one scale",
+    )
+    parser.add_argument(
+        "--profileYAxis", choices=["auto", "shared", "independent", "group"], default="auto",
+        dest="profile_yaxis",
+        help="profile-panel y axis: auto (panels whose ranges are within "
+        "--profileShareRatio-fold share one axis), shared, independent, or group (by metaGrp)",
+    )
+    parser.add_argument(
+        "--profileShareRatio", type=float, default=3.0, dest="profile_share_ratio",
+        help="max ratio between panel y ranges for --profileYAxis auto to share one axis",
+    )
+    parser.add_argument(
+        "--profileYMin", default="", dest="profile_ymin",
+        help="profile y minimum: one value for all panels or a comma list per sample "
+        "('auto' keeps that panel automatic)",
+    )
+    parser.add_argument(
+        "--profileYMax", default="", dest="profile_ymax",
+        help="profile y maximum: one value for all panels or a comma list per sample",
+    )
     args = parser.parse_args(argv)
     regions = _split_list(args.regions)
     labels = None if args.region_labels == "auto" else _split_list(args.region_labels)
@@ -104,8 +139,14 @@ def run_heatmap(argv: list[str] | None = None) -> int:
         plot_scale=args.plot_scale,
         error_estimates=_as_bool(args.error_estimates),
         ln_v=_as_bool(args.ln_v),
-        zmin=args.zmin,
-        zmax=args.zmax,
+        zmin=_float_list(args.zmin),
+        zmax=_float_list(args.zmax),
+        zscale=args.zscale,
+        zscale_ratio=args.zscale_ratio,
+        profile_yaxis=args.profile_yaxis,
+        profile_share_ratio=args.profile_share_ratio,
+        profile_ymin=_float_list(args.profile_ymin),
+        profile_ymax=_float_list(args.profile_ymax),
     )
     outputs = run_heatmap_pipeline(config)
     for name, path in outputs.items():
@@ -123,6 +164,14 @@ def _split_list(value: str) -> list[str]:
             if line.strip()
         ]
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _float_list(value: str) -> list[float | None] | None:
+    """Parse '1.5' or '0,auto,2' into per-sample limits (None = automatic)."""
+    items = _split_list(value)
+    if not items:
+        return None
+    return [None if item.lower() in {"auto", "na", "none"} else float(item) for item in items]
 
 
 def _as_bool(value: object) -> bool:

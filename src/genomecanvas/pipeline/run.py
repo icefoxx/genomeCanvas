@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -58,8 +58,14 @@ class HeatmapConfig:
     reuse_renorm: bool = True
     engine: Engine = "auto"
     skip_zeros: bool = True
-    zmin: float | None = None
-    zmax: float | None = None
+    zmin: float | list[float | None] | None = None
+    zmax: float | list[float | None] | None = None
+    zscale: str = "auto"
+    zscale_ratio: float = 2.0
+    profile_yaxis: str = "auto"
+    profile_share_ratio: float = 3.0
+    profile_ymin: list[float | None] | None = None
+    profile_ymax: list[float | None] | None = None
     heatmap_height: float = 8.0
     seed: int | None = 7201
     voom_threshold: str = "Up2_Down2"
@@ -163,7 +169,7 @@ def run_heatmap_pipeline(config: HeatmapConfig) -> dict[str, Path]:
         style=_plot_styles(config, zmin=0.0, autoscale=True)[0],
     )
     outputs["renorm_profile"] = plot_profile_lines(
-        renormed, Path(f"{prefix}.profile.renorm.png"), style=profile_style,
+        renormed, Path(f"{prefix}.profile.renorm.png"), style=replace(profile_style, ylim=None),
     )
 
     if config.cluster_regions not in {"none", ""}:
@@ -195,7 +201,8 @@ def run_heatmap_pipeline(config: HeatmapConfig) -> dict[str, Path]:
             style=_plot_styles(config, zmin=0.0, zmax=1.1)[0],
         )
         outputs["cluster_profile"] = plot_profile_lines(
-            cluster_renorm, Path(f"{cluster_prefix}.profile.png"), style=profile_style,
+            cluster_renorm, Path(f"{cluster_prefix}.profile.png"),
+            style=replace(profile_style, ylim=None),
         )
         save_matrix(cluster_renorm, Path(f"{cluster_prefix}.matrix.npz"))
     return outputs
@@ -214,6 +221,9 @@ def _plot_styles(
     auto = config.zmin is None and config.zmax is None
     if autoscale is not None:
         auto = autoscale
+    # User profile y limits are in raw-signal units, so only the raw heatmap gets them; the
+    # renormalised (0-1) figures, called with explicit zmin/zmax, keep automatic limits.
+    raw = zmin is None and zmax is None and autoscale is None
     heatmap = HeatmapPlotStyle(
         title=config.title,
         labels=config.sample_labels,
@@ -223,10 +233,16 @@ def _plot_styles(
         zmin=vmin,
         zmax=vmax,
         autoscale=auto,
+        zscale=config.zscale,  # type: ignore[arg-type]
+        zscale_ratio=config.zscale_ratio,
         height=config.heatmap_height,
         plot_scale=config.plot_scale,
         error_estimates=config.error_estimates,
         ln_v=config.ln_v,
+        profile_yaxis=config.profile_yaxis,  # type: ignore[arg-type]
+        profile_share_ratio=config.profile_share_ratio,
+        profile_ymin=config.profile_ymin if raw else None,
+        profile_ymax=config.profile_ymax if raw else None,
     )
     profile = ProfilePlotStyle(
         title=config.title,
@@ -235,8 +251,19 @@ def _plot_styles(
         error_estimates=config.error_estimates,
         ln_v=config.ln_v,
         plot_scale=config.plot_scale,
+        ylim=_single_ylim(config),
     )
     return heatmap, profile
+
+
+def _single_ylim(config: HeatmapConfig) -> tuple[float, float] | None:
+    """Overlay-profile ylim: only when one ymin and one ymax apply to every sample."""
+    lows = {v for v in (config.profile_ymin or []) if v is not None}
+    highs = {v for v in (config.profile_ymax or []) if v is not None}
+    if len(lows) == 1 and len(highs) == 1 and len(config.profile_ymin or []) == 1 \
+            and len(config.profile_ymax or []) == 1:
+        return (lows.pop(), highs.pop())
+    return None
 
 
 def _run_bin_mode(
