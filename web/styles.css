@@ -214,6 +214,8 @@ details.section>summary .count{font-weight:500;color:var(--faint);font-size:11px
 .color-input{display:flex;gap:6px;align-items:center}
 .color-input input[type=color]{width:30px;height:28px;border:1px solid var(--line-2);border-radius:7px;padding:2px;background:var(--panel);cursor:pointer;flex:none}
 .inline-btns{display:flex;gap:6px;flex-wrap:wrap}
+.sample-picks{display:flex;gap:4px 12px;flex-wrap:wrap}
+.sample-pick{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink);cursor:pointer}
 
 .palettes{display:grid;gap:5px}
 .palette{text-align:left;color:var(--ink);display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--panel)}

@@ -209,6 +209,97 @@ def test_matrix_cache_reused_and_recoloured(tmp_path):
     assert "#ee0000" in (tmp_path / "run1" / "provenance.json").read_text()
 
 
+@pytest.mark.parametrize("cluster", ["none", "kmeans"])
+def test_heatmap_sorts_by_chosen_samples_within_groups(tmp_path, cluster):
+    import numpy as np
+
+    from genomecanvas.pipeline.matrix import load_matrix
+
+    records = demo_records(tmp_path)
+    signals = [r for r in records if r["role"] == "signal"]
+    assert len(signals) >= 2
+    chosen = signals[-1]
+    settings = {**H1, "dpi": 72, "sort": "descend", "sort_by": "mean", "cluster": cluster}
+    settings["sort_samples"] = chosen["id"]
+    engine.run_plot(dict(category=1, plot=0, settings=settings), records, tmp_path)
+    matrix = load_matrix(tmp_path / "matrix.npz")
+    scores = np.nanmean(matrix.sample_block(len(signals) - 1), axis=1)
+    bounds = matrix.group_boundaries
+    for left, right in zip(bounds[:-1], bounds[1:], strict=True):
+        assert np.all(np.diff(scores[left:right]) <= 1e-12)
+    methods = (tmp_path / "methods.txt").read_text()
+    assert f"of {chosen['label']}" in methods
+    if cluster != "none":
+        assert "within each cluster" in methods
+
+
+def test_axis_ranges_parsing():
+    assert engine.axis_ranges("", "R") == []
+    assert engine.axis_ranges("0,4", "R") == [(0.0, 4.0)]
+    assert engine.axis_ranges(" 0, 4 ; ;3,auto", "R") == [(0.0, 4.0), (None, None), (3.0, None)]
+    assert engine.axis_ranges("0,40; 6,10, 0,2", "R") == [(0.0, 40.0), (6.0, 10.0), (0.0, 2.0)]
+    for bad in ("4", "4,0", "a,b", "0,1,2"):
+        with pytest.raises(ValueError):
+            engine.axis_ranges(bad, "R")
+
+
+def test_per_sample_colour_and_profile_ranges(tmp_path, monkeypatch):
+    records = demo_records(tmp_path)
+    n = sum(r["role"] == "signal" for r in records)
+    seen = {}
+    real = engine.plot_enrichment_heatmap
+    monkeypatch.setattr(
+        engine,
+        "plot_enrichment_heatmap",
+        lambda *a, **kw: seen.update(style=kw.get("style")) or real(*a, **kw),
+    )
+    z = ";".join(["0,4", "3,4"] + [""] * (n - 2))
+    settings = {**H1, "dpi": 72, "autoscale": False, "z_range": z, "indi": False}
+    settings.update(ylim_manual=True, y_range="0,9")
+    engine.run_plot(dict(category=1, plot=2, settings=settings), records, tmp_path)
+    style = seen["style"]
+    assert style.zmin[:2] == [0.0, 3.0] and style.zmax[:2] == [4.0, 4.0]
+    assert style.zmin[2] is None and style.independent_scale
+    assert style.profile_ymin == [0.0] and style.profile_ymax == [9.0]
+    with pytest.raises(ValueError, match="one per sample column"):
+        settings["z_range"] = "0,4;3,4"
+        engine.run_plot(dict(category=1, plot=2, settings=settings), records, tmp_path / "x")
+
+
+def test_heatmap_anchor_sets_and_region_limit(tmp_path):
+    from genomecanvas.pipeline.matrix import load_matrix
+
+    records = demo_records(tmp_path)
+    regions = [r for r in records if r["role"] == "regions"]
+    chosen = regions[-1]
+    settings = {**H1, "dpi": 72, "anchor_sets": chosen["id"], "region_limit": 5}
+    engine.run_plot(dict(category=1, plot=0, settings=settings), records, tmp_path)
+    matrix = load_matrix(tmp_path / "matrix.npz")
+    assert matrix.group_labels == (chosen["label"],)
+    assert 0 < len(matrix.coords) <= 5
+    methods = (tmp_path / "methods.txt").read_text()
+    assert f"Anchors were taken from {chosen['label']}." in methods
+    assert "strongest of" in methods
+
+
+def test_heatmap_clusters_on_chosen_samples(tmp_path, monkeypatch):
+    records = demo_records(tmp_path)
+    signals = [r for r in records if r["role"] == "signal"]
+    seen = []
+    real = engine.cluster_labels
+    monkeypatch.setattr(
+        engine,
+        "cluster_labels",
+        lambda matrix, **kw: seen.append(kw["sample_indices"]) or real(matrix, **kw),
+    )
+    settings = {**H1, "dpi": 72, "cluster": "kmeans", "clusters": 2}
+    settings["cluster_samples"] = f"{signals[0]['id']},{signals[2]['id']},missing"
+    engine.run_plot(dict(category=1, plot=0, settings=settings), records, tmp_path)
+    assert seen == [[0, 2]]
+    methods = (tmp_path / "methods.txt").read_text()
+    assert f"on {signals[0]['label']}, {signals[2]['label']}" in methods
+
+
 def test_advanced_overrides_and_rc_allowlist(tmp_path):
     records = demo_records(tmp_path)
     engine.run_plot(

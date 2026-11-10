@@ -152,6 +152,7 @@ const profWhen = (c, p) => c === 1 && (p === 1 || p === 2);
 const ASSEMBLIES = ['hg38', 'hg19', 'mm39', 'mm10', 'rn7', 'dm6', 'dm3', 'ce11', 'ce10', 'danRer11', 'sacCer3', 'TAIR10'];
 const LEGEND = ['best', 'upper right', 'upper left', 'lower right', 'lower left', 'center right', 'center left', 'upper center', 'lower center', 'center'];
 const unit = () => (val('size_unit') === 'mm' ? 'mm' : 'in');
+const rangeHelp = () => `min,max for all samples, or one per column separated by ";" (empty or auto = automatic). Columns: ${byRole('signal').map(s => s.label).join('; ') || 'none'}.`;
 const SECTIONS = [
   ['region', 'Region'], ['matrix', 'Regions & binning'], ['heatmap', 'Heatmap'], ['profile', 'Profile'],
   ['qc', 'Sample QC'], ['analysis', 'Analysis'], ['tracks', 'Track layout'], ['color', 'Colours & style'], ['text', 'Text & labels'],
@@ -170,16 +171,19 @@ const FIELDS = [
   { k: 'flank', l: 'Flank (bp)', t: 'number', sec: 'matrix', d: 1000, min: 20, step: 50, when: matrixWhen },
   { k: 'binsize', l: 'Bin size (bp)', t: 'number', sec: 'matrix', d: 50, min: 1, step: 5, when: matrixWhen },
   { k: 'body_length', l: 'Scaled body (bp)', t: 'number', sec: 'matrix', d: 1000, min: 10, step: 100, when: (c, p) => matrixWhen(c, p) && val('alignment') === 'scale-regions' },
+  { k: 'anchor_sets', l: 'Anchor region sets', t: 'samples', role: 'regions', sec: 'matrix', wide: 1, d: '', help: 'Use only these region sets as anchors; none ticked uses all.', when: C(1) },
+  { k: 'region_limit', l: 'Max regions', t: 'number', sec: 'matrix', d: 20000, min: 2, max: 20000, step: 1000, help: 'Larger sets keep their strongest regions (narrowPeak signalValue, else BED score), split evenly across sets.', when: C(1) },
   { k: 'skip_zeros', l: 'Skip all-zero regions', t: 'check', sec: 'matrix', d: true, when: matrixWhen },
   // Heatmap
   { k: 'sort', l: 'Row order', t: 'select', sec: 'heatmap', d: 'descend', o: [['descend', 'Descending'], ['ascend', 'Ascending'], ['none', 'As in file']], when: heatWhen },
   { k: 'sort_by', l: 'Sort by', t: 'select', sec: 'heatmap', d: 'mean', o: ['mean', 'median', 'max', 'min', 'sum'], when: (c, p) => heatWhen(c, p) && val('sort') !== 'none' },
+  { k: 'sort_samples', l: 'Sort using samples', t: 'samples', sec: 'heatmap', wide: 1, d: '', help: 'Rank rows by these signals only; none ticked uses all. With clustering, rows are ranked within each cluster.', when: (c, p) => heatWhen(c, p) && val('sort') !== 'none' },
   { k: 'cluster', l: 'Clustering', t: 'select', sec: 'heatmap', d: (c, p) => (p === 3 ? 'kmeans' : 'none'), o: [['none', 'None'], ['kmeans', 'k-means'], ['hclust', 'Hierarchical']], when: heatWhen },
+  { k: 'cluster_samples', l: 'Cluster using samples', t: 'samples', sec: 'heatmap', wide: 1, d: '', help: 'Cluster rows on these signals only; none ticked uses all.', when: (c, p) => heatWhen(c, p) && val('cluster') !== 'none' },
   { k: 'clusters', l: 'Clusters (k)', t: 'number', sec: 'heatmap', d: 3, min: 2, max: 20, step: 1, when: (c, p) => heatWhen(c, p) && val('cluster') !== 'none' },
   { k: 'normalization', l: 'Normalisation', t: 'select', sec: 'heatmap', d: 'raw', o: [['raw', 'None (raw)'], ['profileMinMax', 'Min–max per sample'], ['qnorm', 'Quantile']], when: heatWhen },
   { k: 'autoscale', l: 'Automatic colour range', t: 'check', sec: 'heatmap', d: true, when: heatWhen },
-  { k: 'zmin', l: 'Colour min', t: 'number', sec: 'heatmap', d: '', ph: 'auto', step: 'any', when: heatWhen, dim: () => val('autoscale') },
-  { k: 'zmax', l: 'Colour max', t: 'number', sec: 'heatmap', d: '', ph: 'auto', step: 'any', when: heatWhen, dim: () => val('autoscale') },
+  { k: 'z_range', l: 'Colour range', t: 'text', sec: 'heatmap', wide: 1, d: '', ph: 'auto · 0,4 or 0,4;3,4', help: () => rangeHelp(), when: heatWhen, dim: () => val('autoscale') },
   { k: 'indi', l: 'Separate colour key per sample', t: 'check', sec: 'heatmap', d: true, when: heatWhen },
   { k: 'show_colorbar', l: 'Show colour key', t: 'check', sec: 'heatmap', d: true, when: heatWhen },
   { k: 'show_group_labels', l: 'Show group strip', t: 'check', sec: 'heatmap', d: true, when: heatWhen },
@@ -193,8 +197,7 @@ const FIELDS = [
   { k: 'ln_h', l: 'Horizontal guide line', t: 'check', sec: 'profile', d: false, when: (c, p) => c === 1 && p === 1 },
   { k: 'ln_h_pos', l: 'Guide at Y =', t: 'number', sec: 'profile', d: 0, step: 'any', when: (c, p) => c === 1 && p === 1 && val('ln_h') },
   { k: 'ylim_manual', l: 'Fixed Y range', t: 'check', sec: 'profile', d: false, when: profWhen },
-  { k: 'ymin', l: 'Y min', t: 'number', sec: 'profile', d: '', step: 'any', when: (c, p) => profWhen(c, p) && val('ylim_manual') },
-  { k: 'ymax', l: 'Y max', t: 'number', sec: 'profile', d: '', step: 'any', when: (c, p) => profWhen(c, p) && val('ylim_manual') },
+  { k: 'y_range', l: 'Y range', t: 'text', sec: 'profile', wide: 1, d: '', ph: 'auto · 0,4 or 0,4;3,4', help: () => (S.plot === 1 ? 'min,max for the profile axis, e.g. 0,4.' : rangeHelp()), when: (c, p) => profWhen(c, p) && val('ylim_manual') },
   { k: 'legend', l: 'Show legend', t: 'check', sec: 'profile', d: true, when: (c, p) => c === 1 && p === 1 },
   { k: 'legend_pos', l: 'Legend position', t: 'select', sec: 'profile', d: 'best', o: LEGEND, when: (c, p) => c === 1 && p === 1 && val('legend') },
   // Sample QC: a sample sheet + a bins x samples matrix (from gcanvas-sampleqc matrix or multiBigwigSummary)
@@ -504,7 +507,7 @@ function fileDetail(f) {
 function filesChanged({ keepRows } = {}) {
   if (!keepRows) renderFiles();
   renderNeeds(); renderPlots();
-  if (S.category === 3 || S.category === 0 || S.category === 4) renderSettings();
+  if (S.category !== 2) renderSettings();  // heatmap sort-sample list follows the signals too
   changed();
 }
 async function removeFile(f) {
@@ -690,7 +693,7 @@ function matchesSearch(f, q) {
   if (!q) return true;
   if (f.k === '_advanced') return 'advanced json override rcparams matplotlib'.includes(q) || q.includes('json');
   if (f.k.startsWith('_')) return false;
-  return `${f.l || ''} ${f.k} ${f.help || ''} ${f.sec}`.toLowerCase().includes(q);
+  return `${f.l || ''} ${f.k} ${typeof f.help === 'function' ? f.help() : f.help || ''} ${f.sec}`.toLowerCase().includes(q);
 }
 function renderSettings() {
   const body = $('#settingsbody');
@@ -718,7 +721,7 @@ function renderField(f) {
   const id = 'f-' + f.k;
   const text = f.unitLabel ? `${f.l} (${unit()})` : f.l;
   const label = () => h('label', { for: id }, text);
-  const help = f.help ? h('div', { class: 'help' }, f.help) : null;
+  const help = f.help ? h('div', { class: 'help' }, typeof f.help === 'function' ? f.help() : f.help) : null;
   switch (f.t) {
     case 'check':
       wrap.classList.add('check');
@@ -789,6 +792,13 @@ function renderField(f) {
         class: 'btn small', type: 'button', title: `${w}${hgt ? ' × ' + hgt : ''} ${u}`,
         onclick: () => { S.settings.size_unit = u; S.settings.fig_width = w; S.settings.fig_height = hgt; setSetting('fig_width', w, { rerender: true }); },
       }, name)), h('button', { class: 'btn small ghost', type: 'button', onclick: () => { S.settings.fig_width = ''; S.settings.exact_size = false; setSetting('fig_height', '', { rerender: true }); } }, 'Auto')));
+    case 'samples': {
+      const picked = new Set(String(v || '').split(',').filter(Boolean));
+      const sigs = byRole(f.role || 'signal');
+      const toggle = (id, on) => { on ? picked.add(id) : picked.delete(id); setSetting(f.k, sigs.map(s => s.id).filter(i => picked.has(i)).join(',')); };
+      return put(wrap, h('label', {}, f.l), h('div', { class: 'sample-picks' }, ...(sigs.length ? sigs.map(s => h('label', { class: 'sample-pick' },
+        h('input', { type: 'checkbox', checked: picked.has(s.id), onchange: e => toggle(s.id, e.target.checked) }), s.label)) : [h('span', { class: 'help' }, `No ${ROLE_NAMES[f.role || 'signal'][1]} selected`)])), help);
+    }
     case 'json': return advancedWidget(wrap);
     case 'qcmap': return qcMapWidget(wrap);
   }

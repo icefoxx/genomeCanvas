@@ -9,6 +9,10 @@ from typing import Any
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
 
+# Output stems (directory / name) whose files a caller writes itself when the figure is closed,
+# as the Studio engine does; save_figure then only closes them.
+DEFERRED_OUTPUTS: set[Path] = set()
+
 
 def make_grid(
     rows: int,
@@ -45,8 +49,9 @@ def save_figure(
     close: bool = True,
 ) -> None:
     """Write the standard PNG/PDF pair and release the Matplotlib figure."""
-    figure.savefig(output_dir / f"{name}.png", dpi=dpi, bbox_inches="tight")
-    figure.savefig(output_dir / f"{name}.pdf", bbox_inches="tight")
+    if Path(output_dir) / name not in DEFERRED_OUTPUTS:
+        figure.savefig(output_dir / f"{name}.png", dpi=dpi, bbox_inches="tight")
+        figure.savefig(output_dir / f"{name}.pdf", bbox_inches="tight")
     if close:
         plt.close(figure)
 

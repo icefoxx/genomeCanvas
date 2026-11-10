@@ -44,6 +44,7 @@ from ..pipeline.metadata import SampleMeta  # noqa: E402
 from ..pipeline.plot_style import HeatmapPlotStyle, ProfilePlotStyle  # noqa: E402
 from ..pipeline.plotting import plot_enrichment_heatmap, plot_profile_lines  # noqa: E402
 from ..pipeline.renorm import renormalize  # noqa: E402
+from ..render import plotting as render_plotting  # noqa: E402
 from ..render.renderer import render  # noqa: E402
 from ..tracks.difference import compare_signal  # noqa: E402
 from ..transform.background import transform_values  # noqa: E402
@@ -335,6 +336,35 @@ def optional_float(value):
     return number_
 
 
+def axis_ranges(text, name):
+    """Parse "0,4" (all samples) or "0,4;3,4" (one per sample column) into (low, high) pairs.
+
+    An empty slot or "auto" leaves that sample (or that end) automatic. A slot holding several
+    pairs ("6,10, 0,2", a missing ";") is read as consecutive samples.
+    """
+    text = str(text or "").strip()
+    if not text or text == "auto":
+        return []
+    ranges = []
+    for slot, part in enumerate(text.split(";"), 1):
+        bounds = [b.strip() for b in part.split(",")] if part.strip() not in ("", "auto") else []
+        if len(bounds) % 2:
+            raise ValueError(
+                f"{name}: slot {slot} '{part.strip()}' needs min,max pairs, "
+                "e.g. 0,4 or 0,4;3,4"
+            )
+        try:
+            values = [optional_float(b) for b in bounds]
+        except ValueError:
+            raise ValueError(f"{name}: slot {slot} '{part.strip()}' is not numbers") from None
+        pairs = list(zip(values[::2], values[1::2], strict=True)) or [(None, None)]
+        for low, high in pairs:
+            if low is not None and high is not None and high <= low:
+                raise ValueError(f"{name}: max must be above min in slot {slot} '{part.strip()}'")
+            ranges.append((low, high))
+    return ranges
+
+
 def number(options, key, default, low=None, high=None):
     value = options.get(key)
     if value in (None, ""):
@@ -509,8 +539,19 @@ def plot_styles(options, title, *, show_profile, extra):
         if manual_y
         else None
     )
-    if ylim is not None and None in ylim:
+    if ylim is not None and None in ylim and "y_range" not in options:
         raise ValueError("Set both Y-axis limits, or switch off manual Y range")
+    # The Studio sends "y_range"/"z_range" text; older saved configs only have ymin/ymax, zmin/zmax.
+    y_ranges = axis_ranges(options.get("y_range"), "Y range") if manual_y else []
+    if "y_range" in options:
+        ylim = y_ranges[0] if len(y_ranges) == 1 and None not in y_ranges[0] else None
+    z_ranges = axis_ranges(options.get("z_range"), "Colour range")
+    autoscale = boolish(options.get("autoscale", True))
+    if "z_range" in options:
+        zmin = [low for low, _ in z_ranges] or None
+        zmax = [high for _, high in z_ranges] or None
+    else:
+        zmin, zmax = optional_float(options.get("zmin")), optional_float(options.get("zmax"))
     width, height = figure_size(options)
     dpi = int(number(options, "dpi", 300, 72, 1200))
     heatmap = HeatmapPlotStyle(
@@ -520,10 +561,12 @@ def plot_styles(options, title, *, show_profile, extra):
         colorbar_label=str(options.get("colorbar_label") or "signal"),
         show_profile=show_profile,
         show_colorbar=boolish(options.get("show_colorbar", True)),
-        independent_scale=boolish(options.get("indi", True)),
-        autoscale=boolish(options.get("autoscale", True)),
-        zmin=optional_float(options.get("zmin")),
-        zmax=optional_float(options.get("zmax")),
+        # Different ranges per column need a colour key per column.
+        independent_scale=boolish(options.get("indi", True))
+        or (not autoscale and len(z_ranges) > 1),
+        autoscale=autoscale,
+        zmin=None if autoscale else zmin,
+        zmax=None if autoscale else zmax,
         plot_scale=scale,
         ln_v=boolish(options.get("ln_v", True)),
         error_estimates=boolish(options.get("error_estimates", True)),
@@ -538,8 +581,8 @@ def plot_styles(options, title, *, show_profile, extra):
         width_per_sample=number(options, "width_per_sample", 2.7, 0.8, 12),
         linewidth=number(options, "linewidth", 1.5, 0.1, 10),
         show_group_labels=boolish(options.get("show_group_labels", True)),
-        profile_ymin=ylim[0] if ylim else None,
-        profile_ymax=ylim[1] if ylim else None,
+        profile_ymin=[low for low, _ in y_ranges] if y_ranges else ylim[0] if ylim else None,
+        profile_ymax=[high for _, high in y_ranges] if y_ranges else ylim[1] if ylim else None,
         x_unit=x_unit,
         cmap=None,
         dpi=dpi,
@@ -603,6 +646,17 @@ def sha256(path):
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _cached_sha256(path, cache):
+    """Input digests keyed by path, size and mtime, so unchanged files are hashed once."""
+    stored = cache.path(cache.key("sha256", source=_fingerprint(path)), ".txt")
+    if stored and stored.is_file():
+        return stored.read_text().strip()
+    digest = sha256(path)
+    if stored:
+        stored.write_text(digest)
+    return digest
 
 
 def software_versions():
@@ -802,6 +856,8 @@ def run_plot(payload, records, destination, cache_dir=None):
         original_close(fig)
 
     plt.close = close_and_export
+    deferred = output.with_suffix("")  # exported above on close; skip helpers' own PNG/PDF
+    render_plotting.DEFERRED_OUTPUTS.add(deferred)
     try:
         with plt.rc_context(rc_params(options, extra.get("rc"))):
             if category == 0:
@@ -814,6 +870,7 @@ def run_plot(payload, records, destination, cache_dir=None):
                 draw_transform(context)
     finally:
         plt.close = original_close
+        render_plotting.DEFERRED_OUTPUTS.discard(deferred)
         original_close("all")
     if not output.exists():
         raise ValueError("No output was generated")
@@ -827,7 +884,7 @@ def run_plot(payload, records, destination, cache_dir=None):
                 group=r["group"],
                 label=r["label"],
                 color=r.get("color"),
-                sha256=r.get("sha256") or sha256(r["path"]),
+                sha256=r.get("sha256") or _cached_sha256(r["path"], context["cache"]),
             )
             for r in records
         ],
@@ -926,6 +983,96 @@ def draw_locus(ctx):
     render(spec, ctx["output"])
 
 
+def _chosen_sample_indices(selection, signals):
+    """Map the Studio's chosen sample file ids to matrix sample indices; None means all."""
+    if isinstance(selection, str):
+        selection = selection.split(",")
+    wanted = {str(item).strip() for item in selection or () if str(item).strip()}
+    indices = [i for i, r in enumerate(signals) if str(r.get("id", "")) in wanted]
+    return indices or None
+
+
+def _cached_cluster_labels(ctx, matrix, method, k, sample_indices):
+    """Cluster ids for this matrix; reused while only styling or sorting changes."""
+    cache, options = ctx["cache"], ctx["options"]
+    stored = cache.path(
+        cache.key(
+            "cluster",
+            matrix=ctx.get("matrix_key"),
+            normalization=options.get("normalization", "raw"),
+            method=method,
+            k=k,
+            samples=sample_indices,
+            rows=len(matrix.coords),
+        ),
+        ".npy",
+    )
+    if stored and ctx.get("matrix_key") and stored.is_file():
+        return np.load(stored)
+    labels = cluster_labels(
+        matrix, method=method, n_clusters=k, sample_indices=sample_indices, seed=7201
+    )
+    if stored and ctx.get("matrix_key"):
+        np.save(stored, labels)
+    return labels
+
+
+def _anchor_regions(ctx):
+    """Region sets chosen as anchors, each cut to its strongest rows to fit the region limit."""
+    options, regions = ctx["options"], ctx["regions"]
+    chosen = _chosen_sample_indices(options.get("anchor_sets"), regions)
+    if chosen is None and options.get("anchor_sets"):
+        ctx["warnings"].append("Anchor region sets are not among the current regions; used all.")
+    regions = [regions[i] for i in chosen] if chosen else regions
+    ctx["notes"]["anchor_sets"] = [r["label"] for r in regions] if chosen else []
+    limit = integer(
+        options.get("region_limit", MAX_REGIONS) or MAX_REGIONS, "Max regions", 2, MAX_REGIONS
+    )
+    lines = {r["path"]: _region_lines(r["path"]) for r in regions}
+    if sum(len(rows) for rows in lines.values()) <= limit:
+        return regions
+    quota, left = {}, limit
+    for index, r in enumerate(sorted(regions, key=lambda r: len(lines[r["path"]]))):
+        quota[r["path"]] = min(len(lines[r["path"]]), left // (len(regions) - index))
+        left -= quota[r["path"]]
+    folder = ctx["cache"].directory or ctx["destination"]
+    trimmed = []
+    for r in regions:
+        rows = lines[r["path"]]
+        if len(rows) <= quota[r["path"]]:
+            trimmed.append(r)
+            continue
+        # Content-addressed name keeps the matrix cache valid across runs.
+        name = ctx["cache"].key("top", source=_fingerprint(r["path"]), n=quota[r["path"]])
+        path = Path(folder) / f"regions-{name}.bed"
+        if not path.is_file():
+            keep = sorted(range(len(rows)), key=lambda i: -_region_strength(rows[i]))
+            keep = sorted(keep[: quota[r["path"]]])
+            path.write_text("".join(rows[i] + "\n" for i in keep), encoding="utf-8")
+        trimmed.append(dict(r, path=str(path)))
+        ctx["notes"].setdefault("trimmed", []).append((r["label"], quota[r["path"]], len(rows)))
+    return trimmed
+
+
+def _region_lines(path):
+    return [
+        line
+        for line in Path(path).read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith(("#", "track", "browser"))
+    ]
+
+
+def _region_strength(line):
+    """narrowPeak/broadPeak signalValue, else the BED score; rows without one rank last."""
+    fields = line.split("\t") if "\t" in line else line.split()
+    for column in (6, 4) if len(fields) >= 10 else (4,):
+        try:
+            return float(fields[column])
+        except (IndexError, ValueError):
+            continue
+    return float("-inf")
+
+
 def _region_matrix(ctx, samples, alignment):
     options, signals, regions = ctx["options"], ctx["signals"], ctx["regions"]
     body = (
@@ -946,6 +1093,7 @@ def _region_matrix(ctx, samples, alignment):
         body=body,
         skip=skip,
     )
+    ctx["matrix_key"] = key
     cached = cache.path(key, ".npz")
     if cached and cached.is_file():
         cache.touch(cached)
@@ -1161,6 +1309,8 @@ def draw_regions(ctx):
     signals, regions, names, colors = ctx["signals"], ctx["regions"], ctx["names"], ctx["colors"]
     destination, output = ctx["destination"], ctx["output"]
     table_only = category == 2 or (category == 3 and plot == 0)
+    if category == 1:
+        regions = ctx["regions"] = _anchor_regions(ctx)
     if not (category == 2 and relationship_mode(options) != "regions"):
         region_rows = sum(len(read_bed(r["path"])) for r in regions)
         limit = MAX_SUMMARY_ROWS if table_only else MAX_REGIONS
@@ -1256,35 +1406,69 @@ def draw_regions(ctx):
         return
     if options.get("normalization", "raw") not in ("raw", "", None):
         matrix = renormalize(matrix, approach=options["normalization"])
-    sort_by = (
-        options.get("sort_by")
-        if options.get("sort_by") in {"mean", "median", "max", "min", "sum"}
-        else "mean"
-    )
-    if options.get("sort", "descend") != "none":
-        matrix = sort_matrix(
-            matrix, method=sort_by, descending=options.get("sort", "descend") == "descend"
-        )
     cluster_method = options.get("cluster", "none")
     if plot == 3 and cluster_method in {"none", "", None}:
         cluster_method = "kmeans"
     if cluster_method not in {"none", "", None}:
         k = integer(options.get("clusters", 3), "Clusters", 2, min(20, len(matrix.coords)))
-        labels_ = cluster_labels(matrix, method=cluster_method, n_clusters=k, seed=7201)
+        cluster_indices = _chosen_sample_indices(options.get("cluster_samples"), signals)
+        if cluster_indices is None and options.get("cluster_samples"):
+            ctx["warnings"].append(
+                "Cluster samples are not among the current signals; clustered on all."
+            )
+        labels_ = _cached_cluster_labels(ctx, matrix, cluster_method, k, cluster_indices)
         order = np.argsort(labels_, kind="stable")
         unique, counts_ = np.unique(labels_, return_counts=True)
         matrix = replace(
             matrix,
             values=matrix.values[order],
             coords=[matrix.coords[i] for i in order],
-            group_labels=tuple(f"C{i + 1}" for i in unique),
+            group_labels=tuple(f"C{i}" for i in unique),  # cluster ids are 1-based
             group_boundaries=tuple([0, *np.cumsum(counts_).tolist()]),
         )
-        ctx["notes"]["cluster"] = (cluster_method, k)
+        ctx["notes"]["cluster"] = (
+            cluster_method,
+            k,
+            [signals[i]["label"] for i in cluster_indices] if cluster_indices else [],
+        )
+    # Sort after clustering so rows are ranked within each cluster (or region group).
+    if options.get("sort", "descend") != "none":
+        sort_by = (
+            options.get("sort_by")
+            if options.get("sort_by") in {"mean", "median", "max", "min", "sum"}
+            else "mean"
+        )
+        sort_indices = _chosen_sample_indices(options.get("sort_samples"), signals)
+        if sort_indices is None and options.get("sort_samples"):
+            ctx["warnings"].append("Sort samples are not among the current signals; sorted by all.")
+        ctx["notes"]["sort_samples"] = (
+            [signals[i]["label"] for i in sort_indices] if sort_indices else []
+        )
+        matrix = sort_matrix(
+            matrix,
+            method=sort_by,
+            descending=options.get("sort", "descend") == "descend",
+            sample_indices=sort_indices,
+        )
     save_matrix(matrix, destination / "matrix.npz")
     heatmap_style, profile_style = plot_styles(
         options, ctx["title"], show_profile=plot == 2, extra=extra
     )
+    for name, values in (
+        ("Colour range", heatmap_style.zmin),
+        ("Y range", heatmap_style.profile_ymin),
+    ):
+        if isinstance(values, list) and len(values) not in (1, len(labels)):
+            raise ValueError(
+                f"{name}: give one min,max for all samples or one per sample column "
+                f"({len(labels)}: {', '.join(labels)}); got {len(values)}"
+            )
+    if (
+        plot == 1
+        and isinstance(heatmap_style.profile_ymin, list)
+        and len(heatmap_style.profile_ymin) > 1
+    ):
+        raise ValueError("Y range: the profile plot has one Y axis; give a single min,max")
     heatmap_style.labels = labels
     profile_style.labels = labels
     profile_style.colors = tuple(r["color"] for r in signals)
@@ -1692,6 +1876,13 @@ def methods_text(ctx) -> str:
             text += "; regions with no signal were excluded"
         text += "."
         parts.append(text)
+        if ctx["notes"].get("anchor_sets"):
+            parts.append(f"Anchors were taken from {', '.join(ctx['notes']['anchor_sets'])}.")
+        for label, kept, total in ctx["notes"].get("trimmed", []):
+            parts.append(
+                f"{label} was limited to its {kept:,} strongest of {total:,} regions "
+                "(narrowPeak signalValue, else BED score)."
+            )
         if category == 1:
             norm = options.get("normalization", "raw")
             if norm not in ("raw", "", None):
@@ -1706,13 +1897,17 @@ def methods_text(ctx) -> str:
             if options.get("plot_scale", "linear") != "linear":
                 parts.append(f"Values are displayed on a {options['plot_scale']} scale.")
             if "cluster" in ctx["notes"]:
-                method, k = ctx["notes"]["cluster"]
+                method, k, chosen = ctx["notes"]["cluster"]
+                over = f" on {', '.join(chosen)}" if chosen else " on all samples"
                 parts.append(
-                    f"Rows were grouped into {k} clusters by {'k-means' if 'kmeans' in method else 'hierarchical clustering'} (seed 7201)."
+                    f"Rows were grouped into {k} clusters by {'k-means' if 'kmeans' in method else 'hierarchical clustering'}{over} (seed 7201)."
                 )
-            elif options.get("sort", "descend") != "none":
+            if options.get("sort", "descend") != "none":
+                chosen = ctx["notes"].get("sort_samples") or []
+                over = f" of {', '.join(chosen)}" if chosen else " across all samples"
+                within = " within each cluster" if "cluster" in ctx["notes"] else ""
                 parts.append(
-                    f"Rows were sorted by {options.get('sort_by', 'mean')} signal ({options.get('sort', 'descend')}ing)."
+                    f"Rows were sorted{within} by {options.get('sort_by', 'mean')} signal{over} ({options.get('sort', 'descend')}ing)."
                 )
             if plot in (1, 2) and boolish(options.get("error_estimates", True)):
                 parts.append("Profiles show the mean ± standard error of the mean.")

@@ -91,6 +91,12 @@ pip install -e ".[studio]"
 # Personal: your own folder of BigWig/BED/GTF files, no sign-in → http://127.0.0.1:8765
 python3 web/server.py --port 8765 --data-dir ~/data/bigwigs
 
+# No --data-dir (or $GENOMECANVAS_DATA_DIR): opens the GEO GSE189561 mESC demo (SOX2, CTCF,
+# H3K4me3/H3K27ac/H3K4me1, input, peaks; ~3.7 GB), downloaded on first start
+python3 web/server.py                      # download if missing (default)
+python3 web/server.py --no-download-data   # never download
+python3 web/demo_data.py [DEST] --verify   # fetch/verify the demo on its own
+
 # Multi-user: password accounts, projects, admin console at /admin
 gcanvas-studio example-config > studio.toml        # set auth = "local", data_root, workspace
 gcanvas-studio --config studio.toml user add you@core.edu --admin   # prints an invitation link
