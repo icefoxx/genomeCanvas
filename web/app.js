@@ -150,7 +150,7 @@ const DEFAULT_SKIP = 'chrM, MT, *_random, chrUn*, *_alt, *_fix, chrEBV, *hap*, *
 const heatWhen = (c, p) => c === 1 && p !== 1;
 const profWhen = (c, p) => c === 1 && (p === 1 || p === 2);
 const ASSEMBLIES = ['hg38', 'hg19', 'mm39', 'mm10', 'rn7', 'dm6', 'dm3', 'ce11', 'ce10', 'danRer11', 'sacCer3', 'TAIR10'];
-const LEGEND = ['best', 'upper right', 'upper left', 'lower right', 'lower left', 'center right', 'center left', 'upper center', 'lower center', 'center'];
+const LEGEND = ['top', 'best', 'upper right', 'upper left', 'lower right', 'lower left', 'center right', 'center left', 'upper center', 'lower center', 'center'];
 const unit = () => (val('size_unit') === 'mm' ? 'mm' : 'in');
 const rangeHelp = () => `min,max for all samples, or one per column separated by ";" (empty or auto = automatic). Columns: ${byRole('signal').map(s => s.label).join('; ') || 'none'}.`;
 const SECTIONS = [
@@ -172,7 +172,7 @@ const FIELDS = [
   { k: 'binsize', l: 'Bin size (bp)', t: 'number', sec: 'matrix', d: 50, min: 1, step: 5, when: matrixWhen },
   { k: 'body_length', l: 'Scaled body (bp)', t: 'number', sec: 'matrix', d: 1000, min: 10, step: 100, when: (c, p) => matrixWhen(c, p) && val('alignment') === 'scale-regions' },
   { k: 'anchor_sets', l: 'Anchor region sets', t: 'samples', role: 'regions', sec: 'matrix', wide: 1, d: '', help: 'Use only these region sets as anchors; none ticked uses all.', when: C(1) },
-  { k: 'region_limit', l: 'Max regions', t: 'number', sec: 'matrix', d: 20000, min: 2, max: 20000, step: 1000, help: 'Larger sets keep their strongest regions (narrowPeak signalValue, else BED score), split evenly across sets.', when: C(1) },
+  { k: 'region_limit', l: 'Max regions', t: 'number', sec: 'matrix', d: 20000, min: 2, max: 20000, step: 1000, help: 'Larger sets keep their strongest regions (narrowPeak signalValue, else BED score), split evenly across sets.', when: (c, p) => c === 1 || (c === 3 && p === 1) },
   { k: 'skip_zeros', l: 'Skip all-zero regions', t: 'check', sec: 'matrix', d: true, when: matrixWhen },
   // Heatmap
   { k: 'sort', l: 'Row order', t: 'select', sec: 'heatmap', d: 'descend', o: [['descend', 'Descending'], ['ascend', 'Ascending'], ['none', 'As in file']], when: heatWhen },
@@ -186,7 +186,10 @@ const FIELDS = [
   { k: 'z_range', l: 'Colour range', t: 'text', sec: 'heatmap', wide: 1, d: '', ph: 'auto · 0,4 or 0,4;3,4', help: () => rangeHelp(), when: heatWhen, dim: () => val('autoscale') },
   { k: 'indi', l: 'Separate colour key per sample', t: 'check', sec: 'heatmap', d: true, when: heatWhen },
   { k: 'show_colorbar', l: 'Show colour key', t: 'check', sec: 'heatmap', d: true, when: heatWhen },
-  { k: 'show_group_labels', l: 'Show group strip', t: 'check', sec: 'heatmap', d: true, when: heatWhen },
+  { k: 'group_label_pos', l: 'Cluster labels', t: 'select', sec: 'heatmap', d: 'strip-right', o: [['strip-right', 'Colour strip, right'], ['strip-left', 'Colour strip, left'], ['text-left', 'Text, left'], ['text-right', 'Text, right'], ['none', 'None']], help: 'Names of the clusters (or region groups) beside the heatmap blocks.', when: heatWhen },
+  { k: 'group_names', l: 'Cluster names', t: 'text', sec: 'heatmap', wide: 1, d: '', ph: 'C1, C2, C3 …', help: 'Comma-separated, top to bottom; blank entries keep the default name. Used by the labels and, unless set below, the legend.', when: heatWhen },
+  { k: 'group_legend', l: 'Group legend', t: 'select', sec: 'heatmap', d: 'top', o: [['top', 'Top (under title)'], ['right', 'Right'], ['none', 'None']], help: 'Line-style key for the profile panels; independent of the cluster labels.', when: (c, p) => c === 1 && p === 2 },
+  { k: 'legend_names', l: 'Legend labels', t: 'text', sec: 'heatmap', wide: 1, d: '', ph: 'same as cluster names', help: 'Comma-separated, top to bottom; blank entries use the cluster name.', when: (c, p) => c === 1 && p === 2 && val('group_legend') !== 'none' },
   { k: 'interpolation', l: 'Pixel smoothing', t: 'combo', sec: 'heatmap', d: 'bilinear', list: ['bilinear', 'nearest', 'bicubic', 'gaussian', 'spline16', 'none'], when: heatWhen },
   { k: 'width_per_sample', l: 'Panel width (in)', t: 'range', sec: 'heatmap', d: 2.7, min: 1, max: 6, step: 0.1, when: heatWhen },
   // Profile
@@ -199,7 +202,7 @@ const FIELDS = [
   { k: 'ylim_manual', l: 'Fixed Y range', t: 'check', sec: 'profile', d: false, when: profWhen },
   { k: 'y_range', l: 'Y range', t: 'text', sec: 'profile', wide: 1, d: '', ph: 'auto · 0,4 or 0,4;3,4', help: () => (S.plot === 1 ? 'min,max for the profile axis, e.g. 0,4.' : rangeHelp()), when: (c, p) => profWhen(c, p) && val('ylim_manual') },
   { k: 'legend', l: 'Show legend', t: 'check', sec: 'profile', d: true, when: (c, p) => c === 1 && p === 1 },
-  { k: 'legend_pos', l: 'Legend position', t: 'select', sec: 'profile', d: 'best', o: LEGEND, when: (c, p) => c === 1 && p === 1 && val('legend') },
+  { k: 'legend_pos', l: 'Legend position', t: 'select', sec: 'profile', d: 'top', o: LEGEND, when: (c, p) => c === 1 && p === 1 && val('legend') },
   // Sample QC: a sample sheet + a bins x samples matrix (from gcanvas-sampleqc matrix or multiBigwigSummary)
   { k: 'qc_sheet', l: 'Sample sheet', t: 'select', sec: 'qc', d: '', wide: 1, o: () => tableOptions('sample sheet'), help: 'TSV/CSV with one row per sample. Upload it like any other file; it is listed under Tables.', when: qcWhen },
   { k: 'qc_matrix', l: 'Signal matrix', t: 'select', sec: 'qc', d: '', wide: 1, o: () => tableOptions('matrix'), help: '.npz from gcanvas-sampleqc matrix, or a multiBigwigSummary --outRawCounts table.', when: qcWhen },
@@ -288,7 +291,7 @@ const FIELDS = [
 ];
 const FIELD = Object.fromEntries(FIELDS.map(f => [f.k, f]));
 // Changing these keys can show or hide other fields, so the panel is re-rendered.
-const DEP_KEYS = new Set(['qc_sheet', 'qc_matrix', 'rel_mode', 'rel_scope', 'alignment', 'cluster', 'autoscale', 'ln_h', 'ylim_manual', 'legend', 'sort', 'palette', 'custom_palette', 'size_unit', 'exact_size']);
+const DEP_KEYS = new Set(['qc_sheet', 'group_legend', 'qc_matrix', 'rel_mode', 'rel_scope', 'alignment', 'cluster', 'autoscale', 'ln_h', 'ylim_manual', 'legend', 'sort', 'palette', 'custom_palette', 'size_unit', 'exact_size']);
 // [label, unit, width, height]
 const SIZE_PRESETS = [['Single column', 'mm', 85, ''], ['1.5 column', 'mm', 114, ''], ['Double column', 'mm', 180, ''], ['Slide 16:9', 'in', 11, 6.2]];
 const REGION_KEYS = ['chrom', 'start', 'end', 'assembly', 'numerator', 'denominator', 'highlights'];
@@ -1257,14 +1260,198 @@ async function loadProject(id) {
   ph.hidden = false; ph.classList.remove('error');
   $('#savebtn').disabled = true;
   renderAll(); renderHistory(); persist();
-  await loadFigures();
+  await Promise.all([loadFigures(), loadAssistant()]);
   status(`${S.project.name}: ${S.files.length} files${readOnly() ? ' · view only' : ''}.`);
   if (!readOnly() && requirement().ok) run();
 }
 
+/* ------------------------------------------------------------------ assistant (chat agent) */
+const A = { enabled: false, providers: [], conversation: null, busy: false, abort: null, bubble: null, steps: [] };
+const STEP_LABEL = {
+  survey_data: () => 'Looking at the project data',
+  read_skill: i => `Reading the ${i?.name || ''} guide`,
+  run_plot: i => `Drawing ${i?.request?.plot ? i.request.plot.split('/').pop().replace(/-/g, ' ') : 'a figure'}`,
+};
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/** Minimal Markdown for model replies. Everything is escaped first, so no model text becomes HTML. */
+function md(text) {
+  const inline = t => t.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  const out = [];
+  let list = null, quote = [], para = [];
+  const flush = () => {
+    if (para.length) { out.push(`<p>${inline(para.join('<br>'))}</p>`); para = []; }
+    if (list) { out.push(`<${list.tag}>${list.items.map(i => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`); list = null; }
+    if (quote.length) { out.push(`<blockquote>${inline(quote.join('<br>'))}</blockquote>`); quote = []; }
+  };
+  const blocks = esc(text).split(/```[a-z]*\n?/);
+  blocks.forEach((block, n) => {
+    if (n % 2) { flush(); out.push(`<pre><code>${block.replace(/\n$/, '')}</code></pre>`); return; }
+    for (const line of block.split('\n')) {
+      let m;
+      if (!line.trim()) flush();
+      else if ((m = line.match(/^\s*(?:[-*]|(\d+)\.)\s+(.*)/))) {
+        const tag = m[1] ? 'ol' : 'ul';
+        if (para.length || quote.length || (list && list.tag !== tag)) flush();
+        list = list || { tag, items: [] };
+        list.items.push(m[2]);
+      } else if ((m = line.match(/^&gt;\s?(.*)/))) { if (para.length || list) flush(); quote.push(m[1]); }
+      else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flush(); out.push(`<h4>${inline(m[1])}</h4>`); }
+      else if (list && /^\s{2,}\S/.test(line)) list.items[list.items.length - 1] += ' ' + line.trim();
+      else { if (list || quote.length) flush(); para.push(line); }
+    }
+    flush();
+  });
+  return out.join('');
+}
+/** Follow new output only while the reader is at the bottom; never yank them away from an older figure. */
+function assistScroll(force) { const log = $('#assistlog'); if (force || A.stick !== false) log.scrollTop = log.scrollHeight; }
+function assistAdd(el) { $('#assistlog').querySelector('.assist-empty')?.remove(); put($('#assistlog'), el); assistScroll(); return el; }
+function assistEmpty() {
+  const ideas = ['What is in this project, and what should I plot first?', 'Where do my histone marks sit around the peaks?', 'Are my samples similar to each other? Show a correlation.'];
+  fill($('#assistlog'), h('div', { class: 'assist-empty' },
+    h('strong', {}, 'Ask for a figure'),
+    h('div', {}, 'The assistant looks at this project’s files, suggests figures, draws them and checks the result. You can open any figure it makes in the editor.'),
+    h('div', {}, ideas.map(q => h('button', { class: 'chip', type: 'button', onclick: () => { $('#assisttext').value = q; $('#assisttext').focus(); } }, q)))));
+}
+function assistUser(text) { return assistAdd(h('div', { class: 'msg user' }, text)); }
+function assistBot(text = '') { const el = assistAdd(h('div', { class: 'msg bot' })); el.dataset.text = text; el.innerHTML = md(text); return el; }
+function assistStep(name, input, running) {
+  return assistAdd(h('div', { class: 'step' + (running ? ' running' : '') }, (STEP_LABEL[name] || (() => name))(input)));
+}
+function assistFigure(job, url) {
+  const open = async () => {
+    try {
+      const data = await api('/api/jobs/' + job);
+      if (data.status !== 'complete') throw new Error(data.error || 'This figure is no longer available');
+      if (data.request) applyConfig(data.request, { quiet: true });
+      data.config = configObject();
+      const request = { ...(data.request || {}), title: data.request?.title || 'Assistant figure' };
+      request.settings = { dpi: 300, ...(request.settings || {}) };  // the engine's default when unset
+      showResult(data, request, S.revision);
+      addHistory(data, request);
+      toast('Opened in the editor: its settings are now on the right');
+    } catch (e) { toast(e.message); }
+  };
+  return assistAdd(h('div', { class: 'assist-fig' },
+    h('img', { src: url, alt: 'Figure drawn by the assistant', onload: () => assistScroll(), onclick: open, title: 'Open in the editor' }),
+    h('div', { class: 'bar' },
+      h('a', { class: 'btn ghost small', href: url + '?download=figure.png' }, 'PNG'),
+      h('button', { class: 'btn small', type: 'button', onclick: open }, 'Open in editor'))));
+}
+function assistError(message) { return assistAdd(h('div', { class: 'msg err' }, message)); }
+function assistSetBusy(busy) {
+  A.busy = busy;
+  $('#assistsend').disabled = busy; $('#assiststop').hidden = !busy;
+  $('#assistmodel').disabled = busy; $('#assistnew').disabled = busy; $('#assisthist').disabled = busy;
+}
+function assistUsage() {
+  const info = A.info || {};
+  const k = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n || 0);
+  $('#assistusage').textContent = info.daily_limit ? `Today: ${k(info.used_today)} of ${k(info.daily_limit)} tokens` : info.used_today ? `Today: ${k(info.used_today)} tokens` : '';
+}
+async function loadAssistant() {
+  A.conversation = null; A.info = null;
+  if (A.abort) A.abort.abort();
+  try { A.info = await papi('/agent'); } catch { A.info = null; }
+  A.enabled = !!A.info?.providers?.length && !readOnly();
+  $('#assistbtn').hidden = !A.enabled;
+  if (!A.enabled) { $('#assistant').hidden = true; $('#assistbtn').setAttribute('aria-expanded', 'false'); return; }
+  const saved = store.get('gc-assist-model', '');
+  fill($('#assistmodel'), A.info.providers.map(p => h('optgroup', { label: p.name + (p.local ? ' · on site' : '') },
+    p.models.map(m => h('option', { value: `${p.name}|${m}` }, m)))));
+  if ([...$('#assistmodel').options].some(o => o.value === saved)) $('#assistmodel').value = saved;
+  assistEmpty(); assistUsage(); renderAssistHistory();
+}
+function renderAssistHistory() {
+  const items = A.info?.conversations || [];
+  fill($('#assisthistmenu'), items.length ? items.map(c => h('button', { onclick: () => { closeMenus(); openConversation(c.id); } },
+    h('span', {}, c.title), h('span', { class: 'sub' }, fmtDate(c.updated)))) : h('div', { class: 'hint', style: { padding: '8px 10px', margin: 0 } }, 'No earlier conversations in this project.'));
+}
+async function openConversation(id) {
+  try {
+    const conv = await papi('/agent/' + id);
+    A.conversation = conv.id;
+    const value = `${conv.provider}|${conv.model}`;
+    if ([...$('#assistmodel').options].some(o => o.value === value)) $('#assistmodel').value = value;
+    fill($('#assistlog'));
+    A.stick = true;
+    for (const item of conv.items) {
+      if (item.type === 'user') assistUser(item.text);
+      else if (item.type === 'assistant') assistBot(item.text);
+      else if (item.type === 'tool') assistStep(item.name, {}, false);
+      else if (item.type === 'figure') assistFigure(item.job, item.url);
+    }
+    if (!conv.items.length) assistEmpty();
+  } catch (e) { toast(e.message); }
+}
+function assistEvent(ev) {
+  if (ev.type === 'conversation') A.conversation = ev.id;
+  else if (ev.type === 'text') {
+    if (!A.bubble) A.bubble = assistBot();
+    A.bubble.dataset.text += ev.text;
+    if (!A.frame) A.frame = requestAnimationFrame(() => { A.frame = null; if (A.bubble) { A.bubble.innerHTML = md(A.bubble.dataset.text); assistScroll(); } });
+  } else if (ev.type === 'tool') {
+    A.bubble = null;
+    A.steps.forEach(s => s.classList.remove('running'));
+    A.steps.push(assistStep(ev.name, ev.input, true));
+  } else if (ev.type === 'figure') {
+    A.steps.forEach(s => s.classList.remove('running'));
+    A.bubble = null;
+    assistFigure(ev.job, ev.url);
+  } else if (ev.type === 'error') { A.bubble = null; assistError(ev.message); }
+  else if (ev.type === 'done') A.steps.forEach(s => s.classList.remove('running'));
+}
+async function assistSend(text) {
+  text = text.trim();
+  if (!text || A.busy) return;
+  const [provider, model] = $('#assistmodel').value.split('|');
+  store.set('gc-assist-model', $('#assistmodel').value);
+  A.stick = true;
+  assistUser(text);
+  $('#assisttext').value = '';
+  A.bubble = null; A.steps = [];
+  assistSetBusy(true);
+  A.abort = new AbortController();
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(S.project.id)}/agent`, {
+      method: 'POST', credentials: 'same-origin', signal: A.abort.signal,
+      headers: { 'X-GenomeCanvas': 'studio', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, provider, model, conversation: A.conversation }),
+    });
+    if (res.status === 401) { location.href = '/login'; return; }
+    if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || res.statusText); }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf('\n\n')) >= 0) {
+        const chunk = buffer.slice(0, cut); buffer = buffer.slice(cut + 2);
+        for (const line of chunk.split('\n')) if (line.startsWith('data:')) assistEvent(JSON.parse(line.slice(5)));
+      }
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') assistError('Stopped.');
+    else assistError(e.message);
+  } finally {
+    A.steps.forEach(s => s.classList.remove('running'));
+    assistSetBusy(false); A.abort = null; A.bubble = null;
+    try { A.info = await papi('/agent'); assistUsage(); renderAssistHistory(); } catch { /* keep the last numbers */ }
+    $('#assisttext').focus();
+  }
+}
+function toggleAssistant(open = $('#assistant').hidden) {
+  $('#assistant').hidden = !open;
+  $('#assistbtn').setAttribute('aria-expanded', String(open));
+  if (open) $('#assisttext').focus();
+}
+
 /* ------------------------------------------------------------------ wiring */
 function renderAll() { renderTopbar(); renderProjectInfo(); renderCategories(); renderPlots(); renderFiles(); renderNeeds(); renderSettings(); renderCrumbs(); renderTemplates(); }
-const MENUS = [['#exportbtn', '#exportmenu'], ['#configbtn', '#configmenu'], ['#tplbtn', '#tplmenu'], ['#userbtn', '#usermenu']];
+const MENUS = [['#exportbtn', '#exportmenu'], ['#configbtn', '#configmenu'], ['#tplbtn', '#tplmenu'], ['#userbtn', '#usermenu'], ['#assisthist', '#assisthistmenu']];
 function closeMenus(except) {
   for (const [btn, menu] of MENUS) {
     if (menu === except) continue;
@@ -1336,6 +1523,16 @@ function wire() {
     for (const [k, v] of Object.entries(S.project.defaults || {})) if (!(k in S.settings)) S.settings[k] = v;
     renderSettings(); renderFiles(); renderCrumbs(); changed();
     toast('Settings for this plot reset to project defaults (region and data kept)');
+  };
+  $('#assistbtn').onclick = () => toggleAssistant();
+  $('#assistclose').onclick = () => toggleAssistant(false);
+  $('#assistnew').onclick = () => { A.conversation = null; assistEmpty(); $('#assisttext').focus(); };
+  $('#assisthist').onclick = e => { e.stopPropagation(); renderAssistHistory(); toggleMenu('#assisthist', '#assisthistmenu'); };
+  $('#assiststop').onclick = () => A.abort?.abort();
+  $('#assistlog').addEventListener('scroll', e => { const l = e.target; A.stick = l.scrollHeight - l.scrollTop - l.clientHeight < 80; });
+  $('#assistform').onsubmit = e => { e.preventDefault(); assistSend($('#assisttext').value); };
+  $('#assisttext').onkeydown = e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.stopPropagation(); assistSend($('#assisttext').value); }
   };
   $('#settingsearch').oninput = debounce(e => { S.search = e.target.value; renderSettings(); }, 120);
   document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap')) closeMenus(); });

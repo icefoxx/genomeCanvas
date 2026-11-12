@@ -6,7 +6,8 @@ call the plot and which parameters matter.
 
 | Skill | Plots |
 |---|---|
-| [genomecanvas-plot](genomecanvas-plot/SKILL.md) | **entry point**: the runner, request format, local vs server mode, shared style/export settings |
+| [genomecanvas](genomecanvas/SKILL.md) | **start here**: survey the data, recommend figures, agree a plan with the user, run, review, report |
+| [genomecanvas-plot](genomecanvas-plot/SKILL.md) | the runner (`gcplot.py`): request format, local vs server mode, shared style/export settings |
 | [genomecanvas-tracks](genomecanvas-tracks/SKILL.md) | stacked tracks, overlaid signals, gene models |
 | [genomecanvas-enrichment](genomecanvas-enrichment/SKILL.md) | heatmap, profile, profile + heatmap, clustered heatmap |
 | [genomecanvas-relationships](genomecanvas-relationships/SKILL.md) | correlation, PCA, PairGrid over regions / genome bins / windows; Sample QC for large collections |
@@ -16,6 +17,7 @@ call the plot and which parameters matter.
 ## Quick start
 
 ```bash
+python3 skills/genomecanvas-plot/scripts/gcplot.py survey path/to/data --write /tmp/plan   # what is here, what to plot
 python3 skills/genomecanvas-plot/scripts/gcplot.py list
 python3 skills/genomecanvas-plot/scripts/gcplot.py run skills/genomecanvas-plot/examples/relationships-pca.json --out /tmp/pca
 # same request against a running Studio (python3 web/server.py --port 8765)
@@ -40,5 +42,5 @@ update `ui_defaults` too.
 To make Claude Code load these automatically in this repo, link them into `.claude/skills/`:
 
 ```bash
-mkdir -p .claude/skills && for d in skills/genomecanvas-*; do ln -s "../../$d" .claude/skills/; done
+mkdir -p .claude/skills && for d in skills/genomecanvas skills/genomecanvas-*; do ln -s "../../$d" .claude/skills/; done
 ```

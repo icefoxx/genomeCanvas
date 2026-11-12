@@ -19,6 +19,7 @@ WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY web ./web
+COPY skills ./skills
 # Small public demo datasets (the large reference_demo fixtures are excluded by .dockerignore).
 COPY tests/fixtures/trackplot_demo ./tests/fixtures/trackplot_demo
 COPY tests/fixtures/seqplots_demo ./tests/fixtures/seqplots_demo

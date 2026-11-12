@@ -1,9 +1,9 @@
 ---
 name: genomecanvas-plot
-description: Render any GenomeCanvas Studio figure (genomic tracks, enrichment heatmaps/profiles, correlation/PCA/PairGrid, differential volcano/peak-center, signal transformations) from BigWig/bedGraph, BED and GTF files, either locally in-process or by submitting a job to a running Studio web server (agent mode). Start here; it routes to one skill per plot family.
+description: Render any GenomeCanvas Studio figure (genomic tracks, enrichment heatmaps/profiles, correlation/PCA/PairGrid, differential volcano/peak-center, signal transformations) from BigWig/bedGraph, BED and GTF files, either locally in-process or by submitting a job to a running Studio web server (agent mode). Runner and request reference; for an open-ended request ("plot my data") start with the genomecanvas skill, which surveys the data and plans the figures.
 ---
 
-# GenomeCanvas plotting (entry skill)
+# GenomeCanvas plotting (runner)
 
 One runner, `scripts/gcplot.py`, drives every Studio plot. It takes the same request the web UI
 sends, applies the same UI defaults, and writes the same outputs (`figure.png/svg/pdf`,
@@ -26,6 +26,8 @@ Paths below are relative to the repository root.
 | `transform/difference`, `ratio`, `log2-ratio`, `background` | 2 signals | [genomecanvas-transform](../genomecanvas-transform/SKILL.md) |
 
 `python3 skills/genomecanvas-plot/scripts/gcplot.py list` prints this table from the engine itself.
+`gcplot.py survey DATA_DIR --write PLAN_DIR` classifies a folder and drafts ranked requests; the
+[genomecanvas](../genomecanvas/SKILL.md) skill describes the full survey → plan → run → review loop.
 Read the family skill before choosing settings: several defaults and input rules are non-obvious.
 Sample QC also has its own command line (`gcanvas-sampleqc matrix | preview | run`) for building
 the matrix on a cluster; see the relationships skill.

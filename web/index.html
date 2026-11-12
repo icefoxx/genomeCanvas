@@ -28,6 +28,9 @@
       <button id="run" class="btn primary" title="Plot (⌘/Ctrl + Enter)">
         <span class="run-label">Plot</span><kbd>⌘↵</kbd>
       </button>
+      <button id="assistbtn" class="btn" aria-expanded="false" aria-controls="assistant" title="Ask the assistant for figures" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg><span>Assistant</span>
+      </button>
       <button id="theme" class="btn icon" title="Toggle light / dark interface" aria-label="Toggle interface theme">
         <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
       </button>
@@ -129,6 +132,28 @@
       <div class="panel-body" id="settingsbody"></div>
     </aside>
   </div>
+
+  <aside id="assistant" class="assistant" aria-label="Assistant" hidden>
+    <div class="assist-head">
+      <h2>Assistant</h2>
+      <select id="assistmodel" class="input" aria-label="Model"></select>
+      <div class="menu-wrap">
+        <button class="btn ghost small" id="assisthist" aria-expanded="false" title="Earlier conversations">History ▾</button>
+        <div class="menu" id="assisthistmenu" hidden></div>
+      </div>
+      <button class="btn ghost small" id="assistnew" title="Start a new conversation">New</button>
+      <button class="btn ghost small" id="assistclose" aria-label="Close the assistant">✕</button>
+    </div>
+    <div class="assist-log" id="assistlog" aria-live="polite"></div>
+    <form class="assist-input" id="assistform">
+      <textarea id="assisttext" class="input" rows="3" placeholder="Ask for a figure, e.g. “Where do my histone marks sit around the SOX2 peaks?”"></textarea>
+      <div class="assist-actions">
+        <span id="assistusage" class="muted"></span>
+        <button type="button" class="btn small" id="assiststop" hidden>Stop</button>
+        <button type="submit" class="btn primary small" id="assistsend">Send <kbd>↵</kbd></button>
+      </div>
+    </form>
+  </aside>
 
   <footer class="statusbar">
     <span id="status" aria-live="polite">Connecting…</span>

@@ -41,7 +41,11 @@ fast.
 | `autoscale`, `zmin`, `zmax` | true | set `autoscale: false` to use zmin/zmax |
 | `indi` | true | separate colour key per sample |
 | `cmap` | `auto` | white → each sample's colour; or a Matplotlib name, or stops `#ffffff,#fdae61,#7f0000`; per-file `cmap` wins |
-| `show_colorbar`, `show_group_labels` | true | |
+| `show_colorbar` | true | |
+| `group_label_pos` | `strip-right` | names beside the row groups / clusters: `strip-right`, `strip-left`, `text-left`, `text-right`, `none`. Names on the left replace the `regions` axis label; crowded names on thin blocks are nudged apart |
+| `group_names` | C1…Ck or region-file labels | comma-separated, top to bottom; blank entries keep the default. Used by the labels and the legend |
+| `group_legend` | `top` | `profile-heatmap` only: line-style key for the groups, `top` (one row under the title), `right` (beside the profile row), `none`. Independent of `group_label_pos` |
+| `legend_names` | = `group_names` | `profile-heatmap` only: legend text only, comma-separated; blank entries fall back to the group name |
 | `interpolation` | `bilinear` | `nearest` for crisp pixels |
 | `width_per_sample` | 2.7 in | `fig_width` overrides it |
 | `colorbar_label`, `sample_label_size` | `signal`, 10 | |
@@ -56,14 +60,18 @@ fast.
 | `ln_v` | true | vertical guide at the anchor |
 | `ln_h`, `ln_h_pos` | false, 0 | horizontal guide (`enrichment/profile` only) |
 | `ylim_manual`, `ymin`, `ymax` | false | fixed y range |
-| `legend`, `legend_pos` | true, `best` | `enrichment/profile` only |
+| `legend`, `legend_pos` | true, `top` | `enrichment/profile` only; `top` = above the axes, under the title; also `best`, `upper right`, … (Matplotlib locations) |
 | `xlab`, `ylab` | auto, `regions` | |
 | `fill_alpha` | 0.18 | ribbon opacity |
 
 ## Outputs and pitfalls
 
 * Writes `matrix.npz` and `matrix.json` next to the figure, so you can re-plot without recomputing.
-* `cluster` reorders rows; the cluster labels C1…Ck replace region-file groups in the strip.
+* `cluster` reorders rows; the cluster labels C1…Ck replace region-file groups in the labels and the
+  legend. Rename them with `group_names` (e.g. `"Promoter, Enhancer, Weak"`), in cluster order.
+  Cluster numbers carry no meaning (C1 is not the strongest), so render first, look at the
+  figure, then name the clusters; never guess names before seeing which block is which.
+* `show_group_labels: false` (older requests) still works: it turns a strip into `text-left` labels.
 * `profileMinMax` and `qnorm` change what the colour scale means. Mention it whenever these figures
   are compared across samples.
 

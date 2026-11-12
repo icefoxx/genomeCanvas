@@ -28,6 +28,8 @@
   "settings": {
     "alignment": "center",
     "flank": 1000,
-    "binsize": 50
+    "binsize": 50,
+    "group_legend": "top",
+    "group_label_pos": "strip-right"
   }
 }

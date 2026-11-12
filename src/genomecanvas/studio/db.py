@@ -55,9 +55,17 @@ CREATE TABLE IF NOT EXISTS audit (
   detail TEXT, ip TEXT
 );
 CREATE INDEX IF NOT EXISTS audit_ts ON audit(ts);
+CREATE TABLE IF NOT EXISTS agent_conversations (
+  id TEXT PRIMARY KEY, project_id TEXT, user_id TEXT, title TEXT, provider TEXT, model TEXT,
+  messages TEXT, usage TEXT, created REAL, updated REAL
+);
+CREATE INDEX IF NOT EXISTS agent_conversations_user ON agent_conversations(user_id, project_id);
+CREATE TABLE IF NOT EXISTS agent_usage (
+  user_id TEXT, day TEXT, tokens INTEGER DEFAULT 0, PRIMARY KEY (user_id, day)
+);
 """
 
-JSON_COLUMNS = {"info", "payload", "result", "config", "defaults"}
+JSON_COLUMNS = {"info", "payload", "result", "config", "defaults", "messages", "usage"}
 
 
 def token_hash(token: str) -> str:

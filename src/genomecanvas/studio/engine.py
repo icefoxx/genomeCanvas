@@ -327,6 +327,16 @@ def boolish(value, default=True):
     return str(value).lower() in {"1", "true", "yes", "on", "t", "y"}
 
 
+def choice(value, allowed, default):
+    return value if value in allowed else default
+
+
+def name_list(value):
+    """Comma/semicolon/newline separated names; [] when all are blank."""
+    names = [n.strip() for n in re.split(r"[,;\n]", str(value or ""))]
+    return names if any(names) else []
+
+
 def optional_float(value):
     if value in (None, "", "auto"):
         return None
@@ -514,6 +524,7 @@ def plot_styles(options, title, *, show_profile, extra):
     if scale not in {"linear", "log2", "zscore"}:
         scale = "linear"
     allowed_legend = {
+        "top",
         "best",
         "upper right",
         "upper left",
@@ -526,9 +537,9 @@ def plot_styles(options, title, *, show_profile, extra):
         "upper center",
         "center",
     }
-    legend_pos = str(options.get("legend_pos", "best"))
+    legend_pos = str(options.get("legend_pos", "top"))
     if legend_pos not in allowed_legend:
-        legend_pos = "best"
+        legend_pos = "top"
     font = str(options.get("font_family") or "DejaVu Sans")
     x_unit = (
         options.get("x_unit") if options.get("x_unit") in {"auto", "bp", "kb", "Mb"} else "auto"
@@ -581,6 +592,13 @@ def plot_styles(options, title, *, show_profile, extra):
         width_per_sample=number(options, "width_per_sample", 2.7, 0.8, 12),
         linewidth=number(options, "linewidth", 1.5, 0.1, 10),
         show_group_labels=boolish(options.get("show_group_labels", True)),
+        group_label_pos=choice(
+            options.get("group_label_pos"),
+            ("strip-right", "strip-left", "text-left", "text-right", "none"),
+            "strip-right",
+        ),
+        group_legend=choice(options.get("group_legend"), ("top", "right", "none"), "top"),
+        group_legend_labels=name_list(options.get("legend_names")) or None,
         profile_ymin=[low for low, _ in y_ranges] if y_ranges else ylim[0] if ylim else None,
         profile_ymax=[high for _, high in y_ranges] if y_ranges else ylim[1] if ylim else None,
         x_unit=x_unit,
@@ -984,11 +1002,16 @@ def draw_locus(ctx):
 
 
 def _chosen_sample_indices(selection, signals):
-    """Map the Studio's chosen sample file ids to matrix sample indices; None means all."""
+    """Map chosen samples (file ids, or labels / file names in hand-written requests) to matrix
+    sample indices; None means all."""
     if isinstance(selection, str):
         selection = selection.split(",")
     wanted = {str(item).strip() for item in selection or () if str(item).strip()}
-    indices = [i for i, r in enumerate(signals) if str(r.get("id", "")) in wanted]
+    indices = [
+        i
+        for i, r in enumerate(signals)
+        if wanted & {str(r.get("id", "")), str(r.get("label", "")), str(r.get("name", ""))}
+    ]
     return indices or None
 
 
@@ -1309,7 +1332,7 @@ def draw_regions(ctx):
     signals, regions, names, colors = ctx["signals"], ctx["regions"], ctx["names"], ctx["colors"]
     destination, output = ctx["destination"], ctx["output"]
     table_only = category == 2 or (category == 3 and plot == 0)
-    if category == 1:
+    if category == 1 or (category == 3 and plot == 1):  # heatmaps and peak-center comparison
         regions = ctx["regions"] = _anchor_regions(ctx)
     if not (category == 2 and relationship_mode(options) != "regions"):
         region_rows = sum(len(read_bed(r["path"])) for r in regions)
@@ -1449,6 +1472,20 @@ def draw_regions(ctx):
             method=sort_by,
             descending=options.get("sort", "descend") == "descend",
             sample_indices=sort_indices,
+        )
+    names = name_list(options.get("group_names"))
+    if names:
+        if len(names) > len(matrix.group_labels):
+            ctx["warnings"].append(
+                f"{len(names)} group names given for {len(matrix.group_labels)} groups; "
+                "extra names were ignored."
+            )
+        matrix = replace(
+            matrix,
+            group_labels=tuple(
+                names[i] if i < len(names) and names[i] else label
+                for i, label in enumerate(matrix.group_labels)
+            ),
         )
     save_matrix(matrix, destination / "matrix.npz")
     heatmap_style, profile_style = plot_styles(

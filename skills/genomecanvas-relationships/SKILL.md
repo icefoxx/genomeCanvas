@@ -45,6 +45,11 @@ Only chromosomes present in **every** signal are used, each trimmed to the short
 files. Limits: 3,000,000 rows after filtering, and about 15 M windows × samples before filtering.
 Use larger bins, a larger step, `rel_chroms` or `rel_max_rows` to stay under them.
 
+Speed: for genome-wide bins/windows and large BED sets, each sample's BigWig is read in its own
+process (up to 4 at once), with identical results to a serial read. Six mm10 BigWigs (0.4-1 GB) at
+10 kb bins: 69 s serial, 27 s parallel; 132k peak regions: 34 s → 12 s. The summary table is cached,
+so changing only plot settings (method, colours, PCA vs correlation) reuses it in about a second.
+
 Plot-specific:
 
 | Key | Default | Plot | Notes |

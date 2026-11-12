@@ -73,13 +73,18 @@ def plot_enrichment_heatmap(
     ratios.append(1.0)
     if opts.show_colorbar and opts.independent_scale:
         ratios.append(opts.colorbar_ratio)
-    extra = 1 if _show_groups(matrix, opts) else 0
+    label_pos = _label_pos(matrix, opts)
+    extra = 1 if label_pos.startswith("strip") else 0
+    strip_left = label_pos == "strip-left"
+    shift = 1 if strip_left else 0  # grid column of the first sample
     figure = plt.figure(figsize=(width, opts.height), facecolor="white")
     grid = figure.add_gridspec(
         len(ratios),
         n_cols + extra,
         height_ratios=ratios,
-        width_ratios=[1.0] * n_cols + ([0.12] if extra else []),
+        width_ratios=([0.12] if strip_left else [])
+        + [1.0] * n_cols
+        + ([0.12] if extra and not strip_left else []),
         hspace=0.22 if opts.show_colorbar and opts.independent_scale else 0.10,
         wspace=0.18,
         left=0.12 if extra else 0.10,
@@ -106,7 +111,7 @@ def plot_enrichment_heatmap(
         )
         vmin, vmax = limits[column]
         if opts.show_profile:
-            axis = figure.add_subplot(grid[0, column])
+            axis = figure.add_subplot(grid[0, column + shift])
             profile_axes.append(axis)
             _draw_profile_panel(
                 axis,
@@ -120,7 +125,7 @@ def plot_enrichment_heatmap(
             )
             axis.set_title(sample_titles[column], fontsize=opts.sample_label_size, pad=6)
         heat = figure.add_subplot(
-            grid[heat_row, column], sharex=profile_axes[column] if profile_axes else None
+            grid[heat_row, column + shift], sharex=profile_axes[column] if profile_axes else None
         )
         heat_axes.append(heat)
         image = heat.imshow(
@@ -143,17 +148,40 @@ def plot_enrichment_heatmap(
         heat.tick_params(labelsize=opts.tick_size, length=3, color="#666666")
         if not opts.show_row_numbers:
             heat.set_yticks([])
-        if column == 0:
+        if column == 0 and label_pos in {"text-left", "strip-left"}:
+            heat.set_ylabel("")  # the group names take the place of the "regions" label
+        elif column == 0:
             heat.set_ylabel(opts.ylab, fontsize=opts.axis_label_size)
         else:
             heat.set_ylabel("")
             heat.tick_params(labelleft=False)
+        text_column = {"text-left": 0, "text-right": n_cols - 1}.get(label_pos)
+        if column == text_column:
+            # Name each region group (e.g. clusters C1…Ck) at its block, nudged apart if crowded.
+            rows_pt = heat.get_position().height * opts.height * 72 / max(n_rows, 1)
+            if label_pos == "text-right":
+                heat = heat.twinx() if opts.show_row_numbers else heat
+                heat.set_ylim(n_rows, 0)
+                heat.yaxis.tick_right()
+                heat.spines["right"].set_visible(False)
+            heat.set_yticks(
+                _group_label_rows(matrix, rows_pt, opts.axis_label_size),
+                list(matrix.group_labels),
+            )
+            heat.tick_params(
+                axis="y",
+                length=0,
+                labelsize=opts.axis_label_size,
+                labelleft=label_pos == "text-left",
+                labelright=label_pos == "text-right",
+            )
+            heat = heat_axes[-1]
         if not opts.show_profile:
             heat.set_title(sample_titles[column], fontsize=opts.sample_label_size, pad=6)
         _apply_distance_ticks(heat, x0, x1, opts.x_unit, matrix)
         heat.spines[["top", "right"]].set_visible(False)
         if opts.show_colorbar and opts.independent_scale:
-            cax = figure.add_subplot(grid[heat_row + 1, column])
+            cax = figure.add_subplot(grid[heat_row + 1, column + shift])
             bar_axes.append(cax)
             bar = figure.colorbar(image, cax=cax, orientation="horizontal")
             bar.ax.tick_params(labelsize=opts.legend_size, length=2)
@@ -170,13 +198,21 @@ def plot_enrichment_heatmap(
             for spine in axis.spines.values():
                 spine.set_color("#555555")
     if extra:
-        group_ax = figure.add_subplot(grid[heat_row, n_cols])
-        _draw_group_strip(group_ax, matrix, opts)
+        group_ax = figure.add_subplot(grid[heat_row, 0 if strip_left else n_cols])
+        _draw_group_strip(group_ax, matrix, opts, "left" if strip_left else "right")
     if opts.show_colorbar and not opts.independent_scale and images:
-        bar = figure.colorbar(images[-1], ax=heat_axes, fraction=0.035, pad=0.02)
+        pad = 0.02 if label_pos != "text-right" else 0.08  # room for the group names
+        bar = figure.colorbar(images[-1], ax=heat_axes, fraction=0.035, pad=pad)
         bar.set_label(opts.colorbar_label, fontsize=opts.legend_size)
         bar.ax.tick_params(labelsize=opts.legend_size)
-    if opts.title:
+    legend = None
+    if profile_axes and len(matrix.group_labels) > 1 and opts.group_legend != "none":
+        legend = _group_legend(figure, profile_axes, matrix, opts)
+    if opts.title and legend is not None and opts.group_legend == "top":
+        figure.canvas.draw()
+        top = (legend.get_window_extent().y1 + 4 * figure.dpi / 72) / figure.bbox.height
+        figure.suptitle(opts.title, fontsize=opts.title_size, fontweight="bold", y=top, va="bottom")
+    elif opts.title:
         figure.suptitle(opts.title, fontsize=opts.title_size, fontweight="bold", y=0.98)
     path = Path(output)
     save_figure(figure, path.parent, path.stem, dpi=opts.dpi, close=True)
@@ -240,7 +276,19 @@ def plot_profile_lines(
     axis.spines[["top", "right"]].set_visible(False)
     axis.tick_params(labelsize=opts.tick_size, length=4)
     _apply_distance_ticks(axis, x0, x1, opts.x_unit, matrix)
-    if opts.legend:
+    if opts.legend and opts.legend_pos == "top":
+        legend = axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(names) if len(names) <= 4 else -(-len(names) // 2),  # at most 2 rows
+            frameon=False,
+            fontsize=opts.legend_size,
+            borderaxespad=0.4,
+            handlelength=1.6,
+            columnspacing=1.2,
+        )
+        _title_above(figure, axis, legend, heading, opts.title_size)
+    elif opts.legend:
         axis.legend(
             loc=opts.legend_pos,
             frameon=False,
@@ -282,7 +330,7 @@ def _sample_titles(
 
 
 def _show_groups(matrix: EnrichmentMatrix, opts: HeatmapPlotStyle) -> bool:
-    return bool(opts.show_group_labels and len(matrix.group_labels) > 1)
+    return _label_pos(matrix, opts).startswith("strip")
 
 
 def _default_xlab(matrix: EnrichmentMatrix) -> str:
@@ -434,8 +482,71 @@ def _draw_profile_panel(
         _vertical_guides(axis, matrix, x0, x1)
     axis.spines[["top", "right", "bottom"]].set_visible(False)
     axis.tick_params(labelbottom=False, bottom=False, labelsize=opts.tick_size, length=3)
-    if column == len(matrix.sample_labels) - 1 and len(matrix.group_labels) > 1:
-        axis.legend(frameon=False, fontsize=opts.legend_size, loc="upper right")
+
+
+def _title_above(figure, axis, legend, heading: str, size: float) -> None:
+    """Re-pad the axis title so it sits just above a legend placed over the axes."""
+    figure.canvas.draw()
+    legend_top = legend.get_window_extent().y1
+    axes_top = axis.get_window_extent().y1
+    axis.set_title(heading, fontsize=size, pad=(legend_top - axes_top) * 72 / figure.dpi + 4)
+
+
+def _label_pos(matrix: EnrichmentMatrix, opts: HeatmapPlotStyle) -> str:
+    """Where group names go beside the heatmap; "none" for a single group."""
+    if len(matrix.group_labels) < 2:
+        return "none"
+    if not opts.show_group_labels and opts.group_label_pos.startswith("strip"):
+        return "text-left"
+    return opts.group_label_pos
+
+
+def _group_legend(figure, profile_axes, matrix: EnrichmentMatrix, opts: HeatmapPlotStyle):
+    """One legend for the region groups / clusters, centred above the profile row."""
+    from matplotlib.lines import Line2D
+
+    fixed = any(c != "auto" for c in matrix.profile_colors)
+    palette = _auto_colors(len(matrix.group_labels))
+    names = list(opts.group_legend_labels or [])
+    handles = [
+        Line2D(
+            [],
+            [],
+            linewidth=opts.linewidth,
+            color="#555555" if fixed else palette[index % len(palette)],
+            linestyle=("-", "--", ":", "-.")[index % 4] if fixed else "-",
+            label=names[index] if index < len(names) and names[index] else group,
+        )
+        for index, group in enumerate(matrix.group_labels)
+    ]
+    figure.canvas.draw()
+    if opts.group_legend == "right":
+        last = profile_axes[-1].get_window_extent()
+        return figure.legend(
+            handles=handles,
+            loc="center left",
+            bbox_to_anchor=(
+                (last.x1 + 8 * figure.dpi / 72) / figure.bbox.width,
+                (last.y0 + last.y1) / 2 / figure.bbox.height,
+            ),
+            frameon=False,
+            fontsize=opts.legend_size,
+            handlelength=2.2,
+            borderaxespad=0.0,
+        )
+    titles_top = max(a.title.get_window_extent().y1 for a in profile_axes)
+    y = (titles_top + 2 * figure.dpi / 72) / figure.bbox.height
+    return figure.legend(
+        handles=handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, y),
+        ncol=min(len(handles), 8),
+        frameon=False,
+        fontsize=opts.legend_size,
+        handlelength=2.2,
+        columnspacing=1.4,
+        borderaxespad=0.0,
+    )
 
 
 def _per_sample(value, index: int) -> float | None:
@@ -510,7 +621,30 @@ def _apply_distance_ticks(axis, x0: float, x1: float, unit: str, matrix: Enrichm
     axis.set_xticklabels(labels)
 
 
-def _draw_group_strip(axis, matrix: EnrichmentMatrix, opts: HeatmapPlotStyle) -> None:
+def _spread(centers: list[float], gap: float, low: float, high: float) -> list[float]:
+    """Nudge sorted 1-D label positions apart to at least ``gap``, staying within [low, high]."""
+    out = list(centers)
+    for i in range(1, len(out)):
+        out[i] = max(out[i], out[i - 1] + gap)
+    overflow = out[-1] - high if out else 0.0
+    if overflow > 0:
+        out[-1] -= overflow
+        for i in range(len(out) - 2, -1, -1):
+            out[i] = min(out[i], out[i + 1] - gap)
+    return [max(low, y) for y in out]
+
+
+def _group_label_rows(matrix: EnrichmentMatrix, rows_pt: float, size: float) -> list[float]:
+    """Row positions for one label per group: block centres, spread so labels do not collide."""
+    bounds = matrix.group_boundaries
+    centers = [(a + b) / 2 for a, b in zip(bounds[:-1], bounds[1:], strict=True)]
+    gap = size * 1.25 / max(rows_pt, 1e-9)
+    return _spread(centers, gap, 0.0, float(bounds[-1]))
+
+
+def _draw_group_strip(
+    axis, matrix: EnrichmentMatrix, opts: HeatmapPlotStyle, side: str = "right"
+) -> None:
     n_rows = max(matrix.values.shape[0], 1)
     palette = _auto_colors(len(matrix.group_labels))
     axis.set_xlim(0, 1)
@@ -519,25 +653,35 @@ def _draw_group_strip(axis, matrix: EnrichmentMatrix, opts: HeatmapPlotStyle) ->
     axis.set_yticks([])
     for spine in axis.spines.values():
         spine.set_visible(False)
-    for index, (left, right, group) in enumerate(
-        zip(
-            matrix.group_boundaries[:-1],
-            matrix.group_boundaries[1:],
-            matrix.group_labels,
-            strict=True,
-        )
-    ):
+    rows_pt = axis.get_position().height * axis.figure.get_figheight() * 72 / n_rows
+    bounds = matrix.group_boundaries
+    for index, (left, right) in enumerate(zip(bounds[:-1], bounds[1:], strict=True)):
         axis.axhspan(left, right, color=palette[index % len(palette)], alpha=0.35)
-        mid = (left + right) / 2
+    fits = all(
+        (b - a) * rows_pt >= opts.group_label_size * (0.6 * len(g) + 0.4)
+        for a, b, g in zip(bounds[:-1], bounds[1:], matrix.group_labels, strict=True)
+    )
+    if fits:  # every label fits inside its block, written along the strip
+        for (a, b), group in zip(
+            zip(bounds[:-1], bounds[1:], strict=True), matrix.group_labels, strict=True
+        ):
+            axis.text(
+                0.5,
+                (a + b) / 2,
+                group,
+                ha="center",
+                va="center",
+                fontsize=opts.group_label_size,
+                rotation=90,
+            )
+        return
+    # Thin blocks: horizontal labels just outside the strip, nudged apart where crowded.
+    x, ha = (1.15, "left") if side == "right" else (-0.15, "right")
+    for row, group in zip(
+        _group_label_rows(matrix, rows_pt, opts.group_label_size), matrix.group_labels, strict=True
+    ):
         axis.text(
-            0.5,
-            mid,
-            group,
-            ha="center",
-            va="center",
-            fontsize=opts.group_label_size,
-            rotation=90,
-            clip_on=True,
+            x, row, group, ha=ha, va="center", fontsize=opts.group_label_size, clip_on=False
         )
 
 

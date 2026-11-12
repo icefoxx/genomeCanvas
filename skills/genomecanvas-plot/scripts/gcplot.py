@@ -1,6 +1,7 @@
 """One entry point for every GenomeCanvas Studio plot, for local use and for agents.
 
     python3 skills/genomecanvas-plot/scripts/gcplot.py list
+    python3 skills/genomecanvas-plot/scripts/gcplot.py survey DIR_OR_FILES ... [--write DIR]
     python3 skills/genomecanvas-plot/scripts/gcplot.py inspect FILE [FILE ...]
     python3 skills/genomecanvas-plot/scripts/gcplot.py run REQUEST.json [--out DIR] [--set k=v ...]
     python3 skills/genomecanvas-plot/scripts/gcplot.py run REQUEST.json --server URL --project ID
@@ -27,27 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-# Stable slugs for CATALOG[category][1][plot] in genomecanvas.studio.engine.
-PLOTS = {
-    "tracks/stacked": (0, 0),
-    "tracks/overlay": (0, 1),
-    "tracks/genes": (0, 2),
-    "enrichment/heatmap": (1, 0),
-    "enrichment/profile": (1, 1),
-    "enrichment/profile-heatmap": (1, 2),
-    "enrichment/clustered-heatmap": (1, 3),
-    "relationships/correlation": (2, 0),
-    "relationships/pca": (2, 1),
-    "relationships/pairgrid": (2, 2),
-    "relationships/sample-qc": (2, 3),
-    "differential/volcano": (3, 0),
-    "differential/peak-center": (3, 1),
-    "transform/difference": (4, 0),
-    "transform/ratio": (4, 1),
-    "transform/log2-ratio": (4, 2),
-    "transform/background": (4, 3),
-}
-SKILLS = ["tracks", "enrichment", "relationships", "differential", "transform"]
+from genomecanvas.studio.plan import PLOTS, SKILLS, job_body, slug_of, ui_defaults  # noqa: E402
+from genomecanvas.studio.plan import resolve_plot as _resolve_plot  # noqa: E402
 
 
 def fail(message, code=1):
@@ -61,32 +43,10 @@ def emit(obj):
 
 def resolve_plot(request):
     """Return (category, plot) from a `plot` slug or explicit integers."""
-    slug = request.get("plot")
-    if isinstance(slug, str):
-        if slug not in PLOTS:
-            fail(f"Unknown plot {slug!r}; run `gcplot.py list` for the choices")
-        return PLOTS[slug]
-    if "category" in request:
-        return int(request["category"]), int(request.get("plot") or 0)
-    fail("The request needs `plot` (e.g. 'relationships/pca') or `category` + `plot`")
-
-
-def ui_defaults(category, plot, settings):
-    """Mirror effectiveSettings() in web/app.js where the UI default differs from the engine's."""
-    out = dict(settings)
-    out.setdefault("size_unit", "mm")
-    if category == 1 or (category == 3 and plot == 1):
-        out.setdefault("flank", 1000)
-        out.setdefault("binsize", 50)
-    if category == 1:
-        out.setdefault("fill_alpha", 0.18)
-    if category == 4 and plot == 3:
-        # The UI sends its "Background flank" field as `flank` for this plot only.
-        out["flank"] = out.get("bg_flank") or out.get("flank") or 5000
-    if category == 2:
-        out.setdefault("rel_stat", "sum" if out.get("rel_mode", "regions") == "regions" else "mean")
-    return out
-
+    try:
+        return _resolve_plot(request)
+    except ValueError as exc:
+        fail(str(exc))
 
 def parse_sets(pairs):
     settings = {}
@@ -214,48 +174,12 @@ class Studio:
             target.write_bytes(response.read())
 
 
-def server_file_id(ref, files):
-    """Match a file reference by id, file name, path basename or label (in that order)."""
-    if isinstance(ref, dict) and ref.get("id"):
-        return ref["id"]
-    key = ref.get("name") or ref.get("path") or ref.get("label") if isinstance(ref, dict) else ref
-    key = str(key or "")
-    for field in ("id", "name", "label"):
-        hits = [
-            f for f in files if f[field] == key or (field == "name" and f[field] == Path(key).name)
-        ]
-        if len(hits) == 1:
-            return hits[0]["id"]
-        if len(hits) > 1:
-            fail(f"{key!r} matches several project files; use the file id")
-    fail(f"{key!r} is not a file in this project; run with --list-files to see them")
-
-
 def run_server(request, out, studio, project_id, poll):
     detail = studio.call(f"/api/projects/{urllib.parse.quote(project_id)}")
-    files = detail["files"]
-    category, plot = resolve_plot(request)
-    # Project defaults sit under the request, as when the UI opens the project.
-    settings = ui_defaults(
-        category, plot, {**detail["project"].get("defaults", {}), **request["settings"]}
-    )
-    for key in ("rel_blacklist", "qc_sheet", "qc_matrix"):
-        if settings.get(key):
-            settings[key] = server_file_id({"name": settings[key]}, files)
-    items = []
-    for ref in request["files"]:
-        item = {k: v for k, v in (ref if isinstance(ref, dict) else {}).items() if k != "path"}
-        item["id"] = server_file_id(ref, files)
-        items.append(item)
-    body = dict(
-        category=category,
-        plot=plot,
-        files=items,
-        settings=settings,
-        title=request.get("title") or settings.get("title"),
-        palette=settings.get("palette"),
-        advanced=request.get("advanced") or {},
-    )
+    try:
+        body = job_body(request, detail["files"], detail["project"].get("defaults", {}))
+    except ValueError as exc:
+        fail(str(exc))
     job = studio.call(f"/api/projects/{urllib.parse.quote(project_id)}/jobs", body)
     deadline = time.time() + 900
     while True:
@@ -312,6 +236,12 @@ def cmd_inspect(args):
     emit(dict(status="ok", files=rows))
 
 
+def cmd_survey(args):
+    from genomecanvas.studio.survey import survey
+
+    emit(survey(args.paths, write_dir=args.write))
+
+
 def cmd_files(args):
     detail = Studio(args.server, args.cookie).call(
         f"/api/projects/{urllib.parse.quote(args.project)}"
@@ -331,7 +261,7 @@ def cmd_files(args):
 def cmd_run(args):
     request = load_request(args.request, args.set)
     category, plot = resolve_plot(request)
-    slug = next(s for s, cp in PLOTS.items() if cp == (category, plot)).replace("/", "-")
+    slug = slug_of(category, plot).replace("/", "-")
     out = Path(args.out or Path.cwd() / "gcanvas_out" / f"{slug}-{time.strftime('%Y%m%d-%H%M%S')}")
     out = out.expanduser().resolve()
     if args.server:
@@ -365,6 +295,11 @@ def main():
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="plots, their slugs and minimum inputs")
+    survey = sub.add_parser(
+        "survey", help="classify a data folder, flag problems and recommend figures"
+    )
+    survey.add_argument("paths", nargs="+", help="folders (searched recursively) or files")
+    survey.add_argument("--write", help="also write each recommended request as JSON here")
     inspect = sub.add_parser("inspect", help="role, chromosomes and extent of input files")
     inspect.add_argument("files", nargs="+")
     run = sub.add_parser("run", help="render one figure from a request JSON")
@@ -384,9 +319,10 @@ def main():
     args = parser.parse_args()
     if args.command == "files" and not args.server:
         fail("files needs --server")
-    {"list": cmd_list, "inspect": cmd_inspect, "run": cmd_run, "files": cmd_files}[args.command](
-        args
+    commands = dict(
+        list=cmd_list, survey=cmd_survey, inspect=cmd_inspect, run=cmd_run, files=cmd_files
     )
+    commands[args.command](args)
 
 
 if __name__ == "__main__":

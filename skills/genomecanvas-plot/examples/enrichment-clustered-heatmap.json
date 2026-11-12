@@ -27,6 +27,8 @@
   ],
   "settings": {
     "cluster": "kmeans",
-    "clusters": 2
+    "clusters": 2,
+    "group_label_pos": "text-left",
+    "group_names": "Cluster A, Cluster B"
   }
 }

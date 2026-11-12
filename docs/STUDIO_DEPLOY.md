@@ -193,6 +193,44 @@ exceed its limits and suggests larger bins.
   console, or the `audit` table) records sign-ins, uploads, jobs, figure saves and admin actions,
   with the client IP taken from `X-Forwarded-For` when the request comes through a trusted proxy.
 
+### Chat assistant (optional)
+
+Project editors can ask for figures in plain language; the assistant surveys the project's files,
+proposes figures, renders them through the normal job queue and looks at each result before
+describing it. It follows `skills/genomecanvas/SKILL.md`. Turn it on with an `[agent]` table
+(`gcanvas-studio example-config` shows a commented one) and `pip install -e ".[agent]"` for Claude.
+
+* **Providers:** `kind = "anthropic"` (Claude through the official SDK) or `kind = "openai"`
+  (OpenAI and any OpenAI-compatible server: vLLM, Ollama, LM Studio). A `base_url` points either
+  kind at an on-site gateway; mark on-site models `local = true`, and `vision = false` for models
+  that cannot read images (they get the methods text and warnings instead of the figure).
+* **OpenCode:** `kind = "opencode"` uses the OpenCode Zen gateway
+  (`https://opencode.ai/inference/openai/v1`, key in `OPENCODE_API_KEY`), which serves every Zen
+  text model through Chat Completions; `plan = "go"` switches to an OpenCode Go subscription
+  (`…/inference/go/openai/v1`) and sends the required `x-opencode-session` header with each chat's
+  id. Models ending in `-free` only work inside OpenCode itself and are refused at start-up. Claude
+  models can also go through Zen's Anthropic endpoint: `kind = "anthropic"`,
+  `base_url = "https://opencode.ai/inference/anthropic"`, `auth = "bearer"`. Any other gateway can
+  get extra request headers with `headers = { … }`.
+* **Networks that inspect HTTPS** (Cloudflare Gateway / Zero Trust, Zscaler, …) re-sign
+  traffic with their own root certificate, which Python's bundle does not contain; requests then
+  fail with "the server does not trust the TLS certificate". Set `ca_bundle = "system"` on that
+  provider to use the operating system's trust store (needs the `truststore` package), or point
+  `ca_bundle` at the organisation's PEM file. `opencode serve` (OpenCode's own coding agent
+  with shell access) is deliberately not supported as a backend.
+* **What leaves the server:** chat text, file names/labels, settings and the rendered figures
+  (downscaled PNG). Raw BigWig/BED data is never sent. Projects listed in `local_only_projects`
+  (or all, with `local_only_all = true`) can only use `local = true` providers.
+* **Access and cost:** the assistant acts as the signed-in user (editors only), so project access,
+  per-user job limits and the queue apply. `max_steps` caps tool calls per message and
+  `daily_tokens_per_user` caps spend; every turn is in the audit log as `agent.turn` with the
+  provider, model, token counts and tools used. API keys are read from the environment variables
+  named in `api_key_env`.
+* **API:** `GET/POST /api/projects/<id>/agent` (POST streams Server-Sent Events: `conversation`,
+  `text`, `tool`, `job`, `figure`, `error`, `done`), `GET/DELETE /api/projects/<id>/agent/<conv>`.
+  Behind nginx, disable buffering for this path (`proxy_buffering off;`); the server also sends
+  `X-Accel-Buffering: no`.
+
 ## 8. Security notes
 
 * Always serve over HTTPS (`secure_cookies = true`). The server itself speaks plain HTTP and

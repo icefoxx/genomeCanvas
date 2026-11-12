@@ -45,6 +45,8 @@ class Config:
     job_retention_days: int = 14
     upload_retention_days: int = 30
     cache_max_gb: float = 20
+    # Chat assistant: the [agent] table (see genomecanvas.studio.agent.settings); empty = off
+    agent: dict = field(default_factory=dict)
 
     @property
     def workspace_path(self) -> Path:
@@ -78,16 +80,23 @@ def load_config(path: str | Path | None = None, overrides: dict | None = None) -
         with open(path, "rb") as handle:
             data = tomllib.load(handle)
         values.update(data.get("studio", data))
+        values["agent"] = data.get("agent", values.get("agent")) or {}
     for item in fields(Config):
         env = os.environ.get(f"GC_STUDIO_{item.name.upper()}")
         if env is not None:
             values[item.name] = env
     values.update({k: v for k, v in (overrides or {}).items() if v is not None})
     known = {item.name: item.type for item in fields(Config)}
+    agent = values.pop("agent", None)
     for key, value in values.items():
         if key not in known:
             raise ValueError(f"Unknown studio setting '{key}'")
         setattr(config, key, _coerce(known[key], value))
+    if isinstance(agent, dict):
+        from .agent.settings import agent_settings
+
+        agent_settings(agent)  # fail at start-up, not on the first chat message
+        config.agent = agent
     if config.auth not in {"none", "local", "proxy"}:
         raise ValueError("auth must be none, local or proxy")
     if not config.workspace:
@@ -136,4 +145,45 @@ default_quota_gb = 20
 job_retention_days = 14
 upload_retention_days = 30
 cache_max_gb = 20
+
+# Chat assistant (pip install -e ".[agent]" for Claude). Leave out to turn it off.
+# API keys come from environment variables, never from this file.
+# [agent]
+# max_steps = 12                       # tool calls per message
+# daily_tokens_per_user = 2000000      # 0 = no limit
+# local_only_projects = ["P2026-017"]  # these may only use providers with local = true
+#
+# [[agent.providers]]
+# name = "claude"
+# kind = "anthropic"
+# models = ["claude-opus-5-5", "claude-sonnet-5-5"]
+# api_key_env = "ANTHROPIC_API_KEY"
+#
+# [[agent.providers]]
+# name = "openai"
+# kind = "openai"
+# models = ["<model id from your OpenAI account>"]
+# api_key_env = "OPENAI_API_KEY"
+#
+# [[agent.providers]]
+# name = "lab-gpu"                     # vLLM / Ollama / LM Studio on site
+# kind = "openai"
+# base_url = "http://gpu01:8000/v1"
+# models = ["<served model name>"]
+# local = true
+# vision = false                       # text-only models get the methods text, not the image
+#
+# [[agent.providers]]
+# name = "opencode"                    # OpenCode Zen gateway, key in OPENCODE_API_KEY
+# kind = "opencode"                    # plan = "go" for an OpenCode Go subscription
+# models = ["kimi-k3", "glm-5.3"]      # paid Zen text models; *-free ones only work in OpenCode
+# ca_bundle = "system"                 # behind HTTPS inspection (e.g. Cloudflare Gateway)
+#
+# [[agent.providers]]
+# name = "opencode-claude"             # Claude models through Zen's Anthropic endpoint
+# kind = "anthropic"
+# base_url = "https://opencode.ai/inference/anthropic"
+# api_key_env = "OPENCODE_API_KEY"
+# auth = "bearer"                      # send the key as Authorization: Bearer
+# models = ["claude-opus-5-5"]
 """

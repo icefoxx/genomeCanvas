@@ -61,6 +61,70 @@ class Studio:
         self.login_attempts: dict[str, list[float]] = {}
         self.attempts_lock = threading.Lock()
         self.meta = None
+        self.agent = None
+        if config.agent:
+            from .agent import ChatAgent
+
+            self.agent = ChatAgent(self)
+            missing = self.agent.settings.missing_keys()
+            if missing:
+                print(f"assistant: no API key for {', '.join(missing)}; hidden until set", flush=True)
+
+    def submit_job(self, user, project, body, ip=None):
+        """Authorise, rate-limit, queue and audit one plot job; used by the jobs API and the agent."""
+        settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
+        sample_qc = body.get("category") == 2 and body.get("plot") == 3
+        # Sample QC reads only the sheet and matrix chosen in its settings.
+        records = [] if sample_qc else self.projects.resolve(project, body.get("files"))
+        if sample_qc:
+            for key in ("qc_sheet", "qc_matrix"):
+                if settings.get(key):
+                    (item,) = self.projects.resolve(
+                        project, [{"id": settings[key], "role": "table"}]
+                    )
+                    records.append({**item, "role": key})
+        if settings.get("rel_blacklist"):
+            # The blacklist is authorised like any other input, then tagged so it is not plotted.
+            (black,) = self.projects.resolve(
+                project, [{"id": settings["rel_blacklist"], "role": "regions"}]
+            )
+            records.append({**black, "role": "blacklist"})
+        active = self.db.one(
+            "SELECT COUNT(*) AS n FROM jobs WHERE user_id = ? AND status IN ('queued','running')",
+            user["id"],
+        )["n"]
+        if active >= self.config.max_jobs_per_user:
+            raise HttpError(429, "You already have figures being drawn; wait for them to finish")
+        if (
+            self.db.one("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('queued','running')")["n"]
+            >= self.config.max_queue
+        ):
+            raise HttpError(429, "The studio is busy; try again in a minute")
+        payload = {
+            k: body.get(k) for k in ("category", "plot", "settings", "title", "palette", "advanced")
+        }
+        payload["files"] = [
+            {k: r[k] for k in ("id", "role", "group", "label", "color", "cmap")} for r in records
+        ]
+        job_id = new_id()
+        self.db.insert(
+            "jobs",
+            id=job_id,
+            project_id=project["id"],
+            user_id=user["id"],
+            status="queued",
+            payload=payload,
+            created=time.time(),
+        )
+        self.jobs.submit(job_id, project["id"], payload, records)
+        category = payload.get("category")
+        plot = payload.get("plot")
+        try:
+            name = CATALOG[int(category)][1][int(plot)]
+        except (TypeError, ValueError, IndexError):
+            name = "figure"
+        self.db.audit(user, "job.submitted", project["id"], name, ip)
+        return job_id
 
     def start(self):
         self.projects.ensure_demos()
@@ -457,6 +521,8 @@ def make_handler(app: Studio):
                 return self.send({"hits": gene_search(paths, query.get("q", ""))})
             if rest == ["jobs"] and method == "POST":
                 return self.submit_job(user, project)
+            if rest[:1] == ["agent"]:
+                return self.agent_routes(method, user, project, rest[1:])
             if rest == ["qc-preview"] and method == "GET":
                 return self.qc_preview(project, query)
             if rest == ["figures"] and method == "GET":
@@ -590,65 +656,7 @@ def make_handler(app: Studio):
             return self.send(out)
 
         def submit_job(self, user, project):
-            body = self.json_body()
-            settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
-            sample_qc = body.get("category") == 2 and body.get("plot") == 3
-            # Sample QC reads only the sheet and matrix chosen in its settings.
-            records = [] if sample_qc else app.projects.resolve(project, body.get("files"))
-            if sample_qc:
-                for key in ("qc_sheet", "qc_matrix"):
-                    if settings.get(key):
-                        (item,) = app.projects.resolve(
-                            project, [{"id": settings[key], "role": "table"}]
-                        )
-                        records.append({**item, "role": key})
-            if settings.get("rel_blacklist"):
-                # The blacklist is authorised like any other input, then tagged so it is not plotted.
-                (black,) = app.projects.resolve(
-                    project, [{"id": settings["rel_blacklist"], "role": "regions"}]
-                )
-                records.append({**black, "role": "blacklist"})
-            active = app.db.one(
-                "SELECT COUNT(*) AS n FROM jobs WHERE user_id = ? AND status IN ('queued','running')",
-                user["id"],
-            )["n"]
-            if active >= config.max_jobs_per_user:
-                raise HttpError(
-                    429, "You already have figures being drawn; wait for them to finish"
-                )
-            if (
-                app.db.one("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('queued','running')")[
-                    "n"
-                ]
-                >= config.max_queue
-            ):
-                raise HttpError(429, "The studio is busy; try again in a minute")
-            payload = {
-                k: body.get(k)
-                for k in ("category", "plot", "settings", "title", "palette", "advanced")
-            }
-            payload["files"] = [
-                {k: r[k] for k in ("id", "role", "group", "label", "color", "cmap")}
-                for r in records
-            ]
-            job_id = new_id()
-            app.db.insert(
-                "jobs",
-                id=job_id,
-                project_id=project["id"],
-                user_id=user["id"],
-                status="queued",
-                payload=payload,
-                created=time.time(),
-            )
-            app.jobs.submit(job_id, project["id"], payload, records)
-            category = payload.get("category")
-            plot = payload.get("plot")
-            try:
-                name = CATALOG[int(category)][1][int(plot)]
-            except (TypeError, ValueError, IndexError):
-                name = "figure"
-            app.db.audit(user, "job.submitted", project["id"], name, self.ip)
+            job_id = app.submit_job(user, project, self.json_body(), self.ip)
             return self.send({"id": job_id, "status": "queued"}, 202)
 
         def job_status(self, user, job_id):
@@ -678,6 +686,8 @@ def make_handler(app: Studio):
                     else [],
                     preview=f"/results/{job_id}/figure.svg",
                     preview_png=f"/results/{job_id}/figure.png",
+                    # The settings that drew it, so the UI can open an assistant figure for editing.
+                    request=job["payload"],
                 )
             return self.send(out)
 
@@ -704,6 +714,90 @@ def make_handler(app: Studio):
             if file.suffix == ".svg":
                 headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
             return self.send(file.read_bytes(), content_type=content_type, headers=headers)
+
+        # ---------------------------------------------------- chat assistant
+        def agent_routes(self, method, user, project, rest):
+            agent = app.agent
+            if agent is None:
+                raise HttpError(404, "The assistant is not enabled on this server")
+            if not rest and method == "GET":
+                return self.send(
+                    dict(
+                        providers=[p.public() for p in agent.settings.available(project["id"])],
+                        conversations=agent.conversations(user, project["id"]),
+                        used_today=agent.used_today(user),
+                        daily_limit=agent.settings.daily_tokens_per_user,
+                    )
+                )
+            if not rest and method == "POST":
+                return self.agent_stream(user, project, self.json_body(256 * 1024))
+            if len(rest) == 1 and method == "GET":
+                row = agent.conversation(user, project["id"], rest[0])
+                return self.send(
+                    dict(
+                        id=row["id"],
+                        title=row["title"],
+                        provider=row["provider"],
+                        model=row["model"],
+                        items=agent.transcript(row),
+                    )
+                )
+            if len(rest) == 1 and method == "DELETE":
+                row = agent.conversation(user, project["id"], rest[0])
+                app.db.run("DELETE FROM agent_conversations WHERE id = ?", row["id"])
+                app.db.audit(user, "agent.deleted", project["id"], row["title"], self.ip)
+                return self.send({"deleted": row["id"]})
+            raise HttpError(404, "Not found")
+
+        def agent_stream(self, user, project, body):
+            """Run one chat turn, streaming events as Server-Sent Events until it is done."""
+            from .agent import ClientGone
+
+            agent = app.agent
+            # Problems found before streaming starts get a normal HTTP error.
+            agent.settings.provider(
+                project["id"], str(body.get("provider")), str(body.get("model"))
+            )
+            limit = agent.settings.daily_tokens_per_user
+            if limit and agent.used_today(user) >= limit:
+                raise HttpError(
+                    429, "You have used today's assistant allowance; try again tomorrow"
+                )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")  # nginx: do not buffer the stream
+            for key, value in SECURITY_HEADERS.items():
+                self.send_header(key, value)
+            self.end_headers()
+            self.close_connection = True
+
+            def emit(event):
+                try:
+                    self.wfile.write(b"data: " + json.dumps(event, default=str).encode() + b"\n\n")
+                    self.wfile.flush()
+                except OSError as exc:
+                    raise ClientGone from exc
+
+            try:
+                agent.run(
+                    user,
+                    project,
+                    body.get("message"),
+                    body.get("provider"),
+                    body.get("model"),
+                    emit,
+                    conversation_id=body.get("conversation"),
+                    ip=self.ip,
+                )
+            except ClientGone:
+                pass
+            except (ValueError, KeyError) as exc:
+                try:
+                    emit(dict(type="error", message=friendly(exc)))
+                    emit(dict(type="done"))
+                except ClientGone:
+                    pass
 
         # ---------------------------------------------------- figures & templates
         def public_figure(self, row):

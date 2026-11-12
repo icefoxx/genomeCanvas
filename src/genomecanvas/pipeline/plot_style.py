@@ -12,7 +12,7 @@ DistanceUnit = Literal["auto", "bp", "kb", "Mb"]
 ScaleMode = Literal["auto", "shared", "independent", "group"]
 ProfileYAxis = ScaleMode  # backwards-compatible alias
 LegendLoc = Literal[
-    "best", "upper right", "upper left", "lower left", "lower right",
+    "top", "best", "upper right", "upper left", "lower left", "lower right",
     "right", "center left", "center right", "lower center", "upper center", "center",
 ]
 
@@ -61,6 +61,15 @@ class HeatmapPlotStyle:
     x_unit: DistanceUnit = "auto"
     show_row_numbers: bool = False
     show_group_labels: bool = True
+    # Region-group / cluster names beside the heatmap: a coloured strip or plain text, on either
+    # side, or none (show_group_labels=False turns a strip into text on the left).
+    group_label_pos: Literal["strip-right", "strip-left", "text-left", "text-right", "none"] = (
+        "strip-right"
+    )
+    # Line-style legend for the profile panels, set independently of the labels above:
+    # "top" (one row under the title), "right" (beside the profile row) or "none".
+    group_legend: Literal["top", "right", "none"] = "top"
+    group_legend_labels: Sequence[str] | None = None  # None/blank entries = the group names
     # Profile-panel y axis, same modes as ``zscale``: "auto" groups panels whose data spans are
     # within ``profile_share_ratio``-fold and gives each group one shared axis. A panel shows its
     # own tick labels whenever its limits differ from the panel to its left.
@@ -82,7 +91,7 @@ class ProfilePlotStyle:
     xlab: str | None = None
     ylab: str = "mean signal"
     legend: bool = True
-    legend_pos: LegendLoc = "best"
+    legend_pos: LegendLoc = "top"  # "top": above the axes, below the title
     error_estimates: bool = True
     ln_v: bool = True
     ln_h: float | None = None
