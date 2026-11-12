@@ -20,7 +20,10 @@ Statistics (per bin, window or region):
 from __future__ import annotations
 
 import fnmatch
+import multiprocessing as mp
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,6 +37,9 @@ STATS = ("mean", "mean0", "sum", "max")
 CHUNK_BP = 20_000_000  # interval path
 VALUES_CHUNK_BP = 4_000_000  # per-base path: ~32 MB of float64 per chunk
 DENSE_BYTES_PER_BASE = 0.1  # 1-bp BigWigs are ~5 B/base; 10 bp ~0.5; sparse bins ~0.005
+MAX_PROCESSES = 4  # samples read in parallel (pyBigWig holds the GIL, so threads do not help)
+PARALLEL_MIN_BYTES = 200_000_000  # bytes to read before process start-up (~1 s) pays off
+PARALLEL_MIN_ROWS = 20_000  # region x sample reads before the same holds for BED regions
 
 
 class SignalReader:
@@ -221,6 +227,40 @@ def select_chromosomes(sizes: dict[str, int], include=None, skip=DEFAULT_SKIP) -
     return sorted(chosen, key=order)
 
 
+def _map_samples(func, paths, *args, processes=1):
+    """``[func(path, *args) for path in paths]``, in up to ``processes`` spawned processes."""
+    paths = list(paths)
+    processes = min(int(processes), MAX_PROCESSES, len(paths), os.cpu_count() or 1)
+    # Daemonic processes (e.g. a multiprocessing.Pool worker) may not start children.
+    if processes > 1 and not mp.current_process().daemon:
+        with ProcessPoolExecutor(processes, mp_context=mp.get_context("spawn")) as pool:
+            return list(pool.map(func, paths, *([a] * len(paths) for a in args)))
+    return [func(path, *args) for path in paths]
+
+
+def _genome_columns(path, spans, step, w, size, stat):
+    """One sample's window values per chromosome in ``spans`` (None where no window fits)."""
+    reader = SignalReader(path)
+    try:
+        out = []
+        for chrom, (lo, hi) in spans.items():
+            n_steps = (hi - lo) // step
+            n_win = n_steps - w + 1
+            if n_win <= 0:
+                out.append(None)
+                continue
+            total, cover, peak = bin_chromosome(reader, chrom, lo, lo + n_steps * step, step, stat)
+            if stat == "max":
+                values = _rolling(np.where(np.isfinite(peak), peak, 0.0), w, "max")
+            else:
+                t, c = _rolling(total, w, "sum"), _rolling(cover, w, "sum")
+                values = _finish(stat, t, c, None, size)
+            out.append(values[:n_win])
+        return out
+    finally:
+        reader.close()
+
+
 @dataclass
 class BinReport:
     windows_total: int = 0
@@ -245,6 +285,7 @@ def genome_summary(
     skip_zeros: bool = True,
     max_rows: int | None = None,
     seed: int = 7201,
+    processes: int | None = None,
 ) -> tuple[RegionSummary, BinReport]:
     """Signal table over fixed bins (step = size) or sliding windows (step < size)."""
     began = time.time()
@@ -292,39 +333,37 @@ def genome_summary(
                     (feature.interval.start, feature.interval.end)
                 )
         report = BinReport(chroms=list(spans))
-        columns: list[list[np.ndarray]] = [[] for _ in readers]
-        coords_chrom, coords_start = [], []
-        for chrom, (lo, hi) in spans.items():
-            n_steps = (hi - lo) // step
-            n_win = n_steps - w + 1
-            if n_win <= 0:
-                continue
-            for index, reader in enumerate(readers.values()):
-                total, cover, peak = bin_chromosome(
-                    reader, chrom, lo, lo + n_steps * step, step, stat
-                )
-                if stat == "max":
-                    values = _rolling(np.where(np.isfinite(peak), peak, 0.0), w, "max")
-                else:
-                    t, c = _rolling(total, w, "sum"), _rolling(cover, w, "sum")
-                    values = _finish(stat, t, c, None, size)
-                columns[index].append(values[:n_win])
-            starts = lo + step * np.arange(n_win, dtype=np.int64)
-            keep = np.ones(n_win, dtype=bool)
-            for b_start, b_end in black.get(chrom, []):
-                k_min = max(0, int(np.floor((b_start - size - lo) / step)) + 1)
-                k_max = min(n_win - 1, int(np.ceil((b_end - lo) / step)) - 1)
-                if k_max >= k_min:
-                    keep[k_min : k_max + 1] = False
-            report.blacklisted += int((~keep).sum())
-            for index in range(len(readers)):
-                columns[index][-1] = columns[index][-1][keep]
-            coords_chrom.append(np.full(int(keep.sum()), chrom, dtype=object))
-            coords_start.append(starts[keep])
-            report.windows_total += n_win
+        if processes is None:  # estimate the bytes to read from the covered genome fraction
+            covered = sum(hi - lo for lo, hi in spans.values()) / max(1, sum(shared.values()))
+            work = covered * sum(Path(r.path).stat().st_size for r in readers.values())
+            processes = MAX_PROCESSES if work >= PARALLEL_MIN_BYTES else 1
     finally:
         for reader in readers.values():
             reader.close()
+    per_sample = _map_samples(
+        _genome_columns, sources.values(), spans, step, w, size, stat, processes=processes
+    )
+    columns: list[list[np.ndarray]] = [[] for _ in sources]
+    coords_chrom, coords_start = [], []
+    for position, (chrom, (lo, hi)) in enumerate(spans.items()):
+        n_win = (hi - lo) // step - w + 1
+        if n_win <= 0:
+            continue
+        for index, sample in enumerate(per_sample):
+            columns[index].append(sample[position])
+        starts = lo + step * np.arange(n_win, dtype=np.int64)
+        keep = np.ones(n_win, dtype=bool)
+        for b_start, b_end in black.get(chrom, []):
+            k_min = max(0, int(np.floor((b_start - size - lo) / step)) + 1)
+            k_max = min(n_win - 1, int(np.ceil((b_end - lo) / step)) - 1)
+            if k_max >= k_min:
+                keep[k_min : k_max + 1] = False
+        report.blacklisted += int((~keep).sum())
+        for index in range(len(sources)):
+            columns[index][-1] = columns[index][-1][keep]
+        coords_chrom.append(np.full(int(keep.sum()), chrom, dtype=object))
+        coords_start.append(starts[keep])
+        report.windows_total += n_win
     if not coords_start:
         raise ValueError("The window is larger than every selected chromosome")
     table = np.column_stack([np.concatenate(col) for col in columns])
@@ -366,6 +405,60 @@ def _alias(reader, chrom):
     return next((c for c in reader.sizes if c.lower().removeprefix("chr") == key), chrom)
 
 
+def _region_column(path, chroms, starts, ends, chrom_names, stat):
+    """One sample's statistic for every BED region (rows aligned with ``starts``)."""
+    column = np.zeros(len(starts))
+    reader = SignalReader(path)
+    try:
+        if reader.dense:
+            # Per-region reads: never materialise a whole chromosome of 1-bp values.
+            widths = np.maximum(ends - starts, 1)
+            total, cover, peak = (
+                np.zeros(len(starts)),
+                np.zeros(len(starts)),
+                np.full(len(starts), -np.inf),
+            )
+            for row, (chrom, a, b) in enumerate(zip(chroms, starts, ends, strict=True)):
+                block = reader.values(_alias(reader, chrom), a, b)
+                finite = np.isfinite(block)
+                total[row], cover[row] = block[finite].sum(), finite.sum()
+                if stat == "max" and finite.any():
+                    peak[row] = block[finite].max()
+            return _finish(stat, total, cover, peak, widths)
+        for chrom in chrom_names:
+            rows = np.flatnonzero(chroms == chrom)
+            lo, hi = int(starts[rows].min()), int(ends[rows].max())
+            s, e, v = reader.intervals(chrom, lo, hi)
+            if not s.size and chrom not in reader.sizes:
+                alias = next(
+                    (
+                        c
+                        for c in reader.sizes
+                        if c.lower().removeprefix("chr") == chrom.lower().removeprefix("chr")
+                    ),
+                    None,
+                )
+                if alias:
+                    s, e, v = reader.intervals(alias, lo, hi)
+            f_sum_s, f_cov_s = _integrals(s, e, v, starts[rows].astype(float))
+            f_sum_e, f_cov_e = _integrals(s, e, v, ends[rows].astype(float))
+            total, cover = f_sum_e - f_sum_s, f_cov_e - f_cov_s
+            peak = None
+            if stat == "max":
+                peak = np.array(
+                    [
+                        v[(e > a) & (s < b)].max(initial=-np.inf)
+                        for a, b in zip(starts[rows], ends[rows], strict=True)
+                    ]
+                )
+            column[rows] = _finish(
+                stat, total, cover, peak, np.maximum(ends[rows] - starts[rows], 1)
+            )
+    finally:
+        reader.close()
+    return column
+
+
 def region_summary(
     sources: dict[str, str],
     bed_paths: list[str | Path],
@@ -374,6 +467,7 @@ def region_summary(
     skip_zeros: bool = False,
     max_rows: int | None = None,
     seed: int = 7201,
+    processes: int | None = None,
 ) -> tuple[RegionSummary, BinReport]:
     """Signal per BED region for every sample (multiBigwigSummary BED-file equivalent)."""
     began = time.time()
@@ -388,56 +482,20 @@ def region_summary(
     ends = np.array([f.interval.end for f in features], dtype=np.int64)
     table = np.zeros((len(features), len(sources)))
     report = BinReport(chroms=sorted(set(chroms.tolist())), windows_total=len(features))
-    for column, path in enumerate(sources.values()):
-        reader = SignalReader(path)
-        try:
-            if reader.dense:
-                # Per-region reads: never materialise a whole chromosome of 1-bp values.
-                widths = np.maximum(ends - starts, 1)
-                total, cover, peak = (
-                    np.zeros(len(starts)),
-                    np.zeros(len(starts)),
-                    np.full(len(starts), -np.inf),
-                )
-                for row, (chrom, a, b) in enumerate(zip(chroms, starts, ends, strict=True)):
-                    block = reader.values(_alias(reader, chrom), a, b)
-                    finite = np.isfinite(block)
-                    total[row], cover[row] = block[finite].sum(), finite.sum()
-                    if stat == "max" and finite.any():
-                        peak[row] = block[finite].max()
-                table[:, column] = _finish(stat, total, cover, peak, widths)
-                continue
-            for chrom in report.chroms:
-                rows = np.flatnonzero(chroms == chrom)
-                lo, hi = int(starts[rows].min()), int(ends[rows].max())
-                s, e, v = reader.intervals(chrom, lo, hi)
-                if not s.size and chrom not in reader.sizes:
-                    alias = next(
-                        (
-                            c
-                            for c in reader.sizes
-                            if c.lower().removeprefix("chr") == chrom.lower().removeprefix("chr")
-                        ),
-                        None,
-                    )
-                    if alias:
-                        s, e, v = reader.intervals(alias, lo, hi)
-                f_sum_s, f_cov_s = _integrals(s, e, v, starts[rows].astype(float))
-                f_sum_e, f_cov_e = _integrals(s, e, v, ends[rows].astype(float))
-                total, cover = f_sum_e - f_sum_s, f_cov_e - f_cov_s
-                peak = None
-                if stat == "max":
-                    peak = np.array(
-                        [
-                            v[(e > a) & (s < b)].max(initial=-np.inf)
-                            for a, b in zip(starts[rows], ends[rows], strict=True)
-                        ]
-                    )
-                table[rows, column] = _finish(
-                    stat, total, cover, peak, np.maximum(ends[rows] - starts[rows], 1)
-                )
-        finally:
-            reader.close()
+    if processes is None:
+        processes = MAX_PROCESSES if len(features) * len(sources) >= PARALLEL_MIN_ROWS else 1
+    columns = _map_samples(
+        _region_column,
+        sources.values(),
+        chroms,
+        starts,
+        ends,
+        report.chroms,
+        stat,
+        processes=processes,
+    )
+    for index, values in enumerate(columns):
+        table[:, index] = values
     table, (names, chroms, starts, ends) = _filter(
         table, [names, chroms, starts, ends], skip_zeros, max_rows, seed, report
     )

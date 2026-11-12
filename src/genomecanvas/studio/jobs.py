@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import os
 import shutil
+import signal
 import threading
 import time
 from collections import deque
@@ -30,13 +32,16 @@ def _worker_main(conn, memory_mb: int, cache_dir: str) -> None:
         resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
     except (ImportError, ValueError, OSError):
         pass  # not enforceable on this platform (e.g. macOS); the timeout still applies
-    import os
-
+    if hasattr(os, "setpgrp"):
+        os.setpgrp()  # own process group, so a restart also stops per-sample reader processes
     os.environ.setdefault("MPLCONFIGDIR", str(Path(cache_dir).parent / "mpl"))
     from .engine import run_plot
 
     while True:
-        message = conn.recv()
+        try:
+            message = conn.recv()
+        except (EOFError, OSError):
+            return  # the server went away
         if message is None:
             return
         job_id, payload, records, destination = message
@@ -61,14 +66,19 @@ class _Slot:
 
     def start(self):
         self.conn, child = self.context.Pipe()
+        # Not a daemon: daemonic processes may not start the per-sample reader processes.
+        # A worker still exits when the server goes away, as its pipe then closes.
         self.process = self.context.Process(
-            target=_worker_main, args=(child, self.memory_mb, self.cache_dir), daemon=True
+            target=_worker_main, args=(child, self.memory_mb, self.cache_dir), daemon=False
         )
         self.process.start()
 
     def restart(self):
         try:
-            self.process.kill()
+            if hasattr(os, "killpg"):
+                os.killpg(self.process.pid, signal.SIGKILL)
+            else:
+                self.process.kill()
             self.process.join(5)
         except Exception:  # noqa: BLE001
             pass
