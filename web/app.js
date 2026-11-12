@@ -413,7 +413,26 @@ function renderProjectInfo() {
   fill($('#projectinfo'), 
     h('div', { class: 'pi-name' }, p.name, p.genome ? h('span', { class: 'chip' }, p.genome) : null),
     p.description ? h('div', { class: 'pi-desc' }, p.description) : null,
-    h('div', { class: 'pi-meta' }, `${S.files.filter(f => !f.shared && f.source !== 'upload').length} delivered files${quota}${p.expires ? ' · access until ' + p.expires : ''}`));
+    h('div', { class: 'pi-meta' }, `${S.files.filter(f => !f.shared && f.source !== 'upload').length} delivered files${quota}${p.expires ? ' · access until ' + p.expires : ''}`,
+      p.scannable && !readOnly() ? h('button', { class: 'btn ghost small pi-scan', id: 'rescan', title: 'Look for files added to or removed from the project folder', onclick: rescanFolder }, 'Rescan folder') : null));
+}
+/** Re-read the project folder (files added on the server appear) without losing the user's edits. */
+async function rescanFolder() {
+  const btn = $('#rescan');
+  btn.disabled = true; btn.textContent = 'Scanning…';
+  try {
+    const { scan } = await papi('/scan', { method: 'POST' });
+    const { files } = await papi('/files');
+    const before = new Map(S.files.map(f => [f.id, f]));
+    const kept = S.files.filter(f => files.some(n => n.id === f.id))
+      .map(f => hydrate(files.find(n => n.id === f.id), fileOverrides(f)));
+    S.files = [...kept, ...files.filter(n => !before.has(n.id)).map(n => hydrate(n))];
+    renderProjectInfo(); filesChanged(); persist();
+    toast(`Folder rescanned: ${scan.added || 0} new, ${scan.removed || 0} removed${scan.warnings?.length ? ' · ' + scan.warnings.join('; ') : ''}`);
+  } catch (e) {
+    toast(e.message);
+    renderProjectInfo();
+  }
 }
 function renderNeeds() {
   const req = requirement();

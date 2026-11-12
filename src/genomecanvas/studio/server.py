@@ -31,6 +31,7 @@ STATIC = {
     "/admin.js": "admin.js",
 }
 COOKIE = "gc_session"
+SCAN_COOLDOWN = 30  # seconds between editor-triggered rescans of one project
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -61,6 +62,8 @@ class Studio:
         self.login_attempts: dict[str, list[float]] = {}
         self.attempts_lock = threading.Lock()
         self.meta = None
+        self.scan_lock = threading.Lock()  # one folder scan at a time (manual, admin or timer)
+        self.last_rescan: dict[str, float] = {}  # editor rescans only (their cooldown)
         self.agent = None
         if config.agent:
             from .agent import ChatAgent
@@ -132,16 +135,30 @@ class Studio:
         if self.config.auth == "none" and not self.db.user_by_email("local"):
             self.db.create_user("local", name="Local user", is_admin=True)
         self.jobs.start()
-        threading.Thread(target=self._scan_all, daemon=True).start()
+        threading.Thread(target=self._scan_loop, name="gc-scan", daemon=True).start()
+
+    def scan_project(self, project_id):
+        """Re-read one project's folder; scans never overlap."""
+        with self.scan_lock:
+            return self.projects.scan(project_id)
 
     def _scan_all(self):
         for project in self.db.all(
             "SELECT id FROM projects WHERE status = 'active' AND data_dir != ''"
         ):
             try:
-                self.projects.scan(project["id"])
+                self.scan_project(project["id"])
             except Exception as exc:  # noqa: BLE001
                 print(f"scan {project['id']}: {exc}", flush=True)
+
+    def _scan_loop(self):
+        """Scan at start-up, then every scan_interval_minutes so files added to a project folder
+        appear without anyone pressing Rescan."""
+        while True:
+            self._scan_all()
+            if self.config.scan_interval_minutes <= 0:
+                return
+            time.sleep(self.config.scan_interval_minutes * 60)
 
     LIMITS = {"account": 10, "ip": 60}  # failed attempts per 10 minutes
 
@@ -494,6 +511,9 @@ def make_handler(app: Studio):
                                 {**project, "role": role, "demo": app.projects.is_demo(project_id)}
                             ),
                             defaults=project.get("defaults") or {},
+                            # Editors may re-read the project folder after adding files to it.
+                            scannable=bool(project.get("data_dir"))
+                            and not app.projects.is_demo(project_id),
                             quota=project.get("quota_bytes"),
                             used=app.projects.upload_usage(project_id),
                         ),
@@ -521,6 +541,8 @@ def make_handler(app: Studio):
                 return self.send({"hits": gene_search(paths, query.get("q", ""))})
             if rest == ["jobs"] and method == "POST":
                 return self.submit_job(user, project)
+            if rest == ["scan"] and method == "POST":
+                return self.editor_scan(user, project)
             if rest[:1] == ["agent"]:
                 return self.agent_routes(method, user, project, rest[1:])
             if rest == ["qc-preview"] and method == "GET":
@@ -714,6 +736,26 @@ def make_handler(app: Studio):
             if file.suffix == ".svg":
                 headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
             return self.send(file.read_bytes(), content_type=content_type, headers=headers)
+
+        def editor_scan(self, user, project):
+            """Rescan by a project editor: re-read the folder for files added or removed there."""
+            if not project.get("data_dir") or app.projects.is_demo(project["id"]):
+                raise HttpError(400, "This project has no data folder to rescan")
+            since = time.time() - app.last_rescan.get(project["id"], 0)
+            if since < SCAN_COOLDOWN:
+                raise HttpError(
+                    429, f"Rescanned {since:.0f} s ago; try again in {SCAN_COOLDOWN - since:.0f} s"
+                )
+            app.last_rescan[project["id"]] = time.time()
+            try:
+                report = app.scan_project(project["id"])
+            except ValueError as exc:  # names a server path: keep it in the log, not the browser
+                print(f"scan {project['id']}: {exc}", flush=True)
+                raise HttpError(
+                    400, "The project's data folder is not available; contact the core"
+                ) from exc
+            app.db.audit(user, "project.scanned", project["id"], report, self.ip)
+            return self.send({"scan": report})
 
         # ---------------------------------------------------- chat assistant
         def agent_routes(self, method, user, project, rest):
@@ -1025,7 +1067,7 @@ def make_handler(app: Studio):
                 db.audit(user, "project.updated", rest[1], updates, self.ip)
                 return self.send({"ok": True})
             if len(rest) == 3 and rest[0] == "projects" and rest[2] == "scan" and method == "POST":
-                report = app.projects.scan(rest[1])
+                report = app.scan_project(rest[1])
                 db.audit(user, "project.scanned", rest[1], report, self.ip)
                 return self.send({"scan": report})
             if (

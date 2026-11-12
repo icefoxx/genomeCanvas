@@ -123,13 +123,18 @@ gcs project add P2026-017 --name "Smith lab · H3K27ac" --dir smith/P2026-017 \
     --genome mm10 --expires 2027-04-30 --quota-gb 20
 gcs project member P2026-017 jane.smith@uni.edu --role editor   # new users get an invite link
 gcs project member P2026-017 pi@uni.edu --role viewer
-gcs project scan P2026-017        # after adding or changing delivered files
+gcs project scan P2026-017        # after adding or changing delivered files (also automatic)
 gcs project scan                  # every active project + shared annotations
 gcs project archive P2026-017     # access ends; data and saved figures are kept
 gcs user invite jane.smith@uni.edu  # new link = password reset
 gcs user disable former@uni.edu
 gcs cleanup                       # apply retention now (also runs hourly)
 ```
+
+Files added to or removed from a project folder on the server show up on their own: Studio
+re-reads every active project folder every `scan_interval_minutes` (15 by default). Project
+editors can also press **Rescan folder** in the Files panel to pick them up at once (at most once
+every 30 seconds per project); a folder with a `samples.tsv` only lists the files named in it.
 
 When a project's `expires` date passes, members lose access automatically, without
 deleting anything.
@@ -160,6 +165,7 @@ an environment variable `GC_STUDIO_<KEY>`, or on the command line for `serve`
 | `worker_memory_mb` | `4096` | per-worker address-space cap (Linux) |
 | `max_jobs_per_user`, `max_queue` | `3`, `64` | fairness and back-pressure |
 | `max_upload_mb` | `2048` | per file; match nginx `client_max_body_size` |
+| `scan_interval_minutes` | `15` | re-read project folders for files added or removed on the server; `0` = only at start-up and on Rescan |
 | `default_quota_gb` | `20` | per-project upload quota |
 | `job_retention_days` | `14` | results deleted afterwards unless saved as a figure |
 | `upload_retention_days` | `30` | client uploads deleted afterwards |

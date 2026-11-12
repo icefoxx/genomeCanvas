@@ -45,6 +45,9 @@ class Config:
     job_retention_days: int = 14
     upload_retention_days: int = 30
     cache_max_gb: float = 20
+    # Re-read project folders for added/removed files every N minutes (0 = only at start-up and
+    # when someone presses Rescan)
+    scan_interval_minutes: int = 15
     # Chat assistant: the [agent] table (see genomecanvas.studio.agent.settings); empty = off
     agent: dict = field(default_factory=dict)
 
@@ -145,6 +148,7 @@ default_quota_gb = 20
 job_retention_days = 14
 upload_retention_days = 30
 cache_max_gb = 20
+scan_interval_minutes = 15  # re-read project folders for new files; 0 = start-up and Rescan only
 
 # Chat assistant (pip install -e ".[agent]" for Claude). Leave out to turn it off.
 # API keys come from environment variables, never from this file.

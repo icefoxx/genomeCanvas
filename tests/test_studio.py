@@ -850,3 +850,53 @@ def test_sample_qc_via_api(studio, tmp_path):
     assert alice.wait(job["id"])["error"].startswith(
         "Sample QC needs a sample sheet and a signal matrix"
     )
+
+
+def test_editors_rescan_project_folder(studio, data_root):
+    app, base = studio
+    alice = Client(base).login("alice@lab.org", "alice@lab.org-pw-123")
+    bob = Client(base).login("bob@lab.org", "bob@lab.org-pw-123")
+    carol = Client(base).login("carol@other.org", "carol@other.org-pw-123")
+    status, info = alice.call("GET", "/api/projects/P1")
+    assert status == 200 and info["project"]["scannable"] is True
+    before = {f["name"] for f in info["files"]}
+    # A collaborator drops a new track into the project folder on the server ...
+    folder = data_root / "smith" / "P1"
+    (folder / "samples.tsv").unlink()  # plain folder: every supported file is a deliverable
+    shutil.copy(FIX / "bw" / "H1_H2az.bw", folder / "bw")
+    status, body = alice.call("POST", "/api/projects/P1/scan")
+    assert status == 200 and body["scan"]["added"] >= 1, body
+    names = {f["name"] for f in alice.call("GET", "/api/projects/P1/files")[1]["files"]}
+    assert "H1_H2az.bw" in names and "H1_H2az.bw" not in before
+    status, body = alice.call("POST", "/api/projects/P1/scan")  # cooldown
+    assert status == 429 and "try again" in body["error"]
+    assert bob.call("POST", "/api/projects/P1/scan")[0] == 403  # viewers cannot rescan
+    assert carol.call("POST", "/api/projects/P1/scan")[0] == 404  # not her project
+    assert app.db.one("SELECT * FROM audit WHERE action = 'project.scanned'")
+
+
+def test_folders_rescanned_on_a_timer(tmp_path, data_root, monkeypatch):
+    config = make_config(tmp_path, data_root, scan_interval_minutes=1)
+    app = Studio(config)
+    app.projects.create("P1", data_dir="smith/P1")
+    naps = []
+
+    def fake_sleep(seconds):
+        naps.append(seconds)
+        if len(naps) == 1:  # a file arrives between two scans
+            shutil.copy(
+                FIX / "narrowpeak" / "H1_chromHMM.bed", data_root / "smith" / "P1" / "late.bed"
+            )
+            with (data_root / "smith" / "P1" / "samples.tsv").open("a") as handle:
+                handle.write("late.bed\tLate peaks\tpeaks\t\n")
+        else:
+            raise SystemExit  # stop the loop after the second scan
+
+    monkeypatch.setattr("genomecanvas.studio.server.time.sleep", fake_sleep)
+    with pytest.raises(SystemExit):
+        app._scan_loop()
+    assert naps[0] == 60
+    labels = {
+        f["label"] for f in app.projects.files(app.db.one("SELECT * FROM projects WHERE id='P1'"))
+    }
+    assert "Late peaks" in labels
